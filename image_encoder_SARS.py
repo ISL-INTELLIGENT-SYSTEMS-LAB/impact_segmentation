@@ -235,7 +235,7 @@ def mapImageMask_SARS(semSegImage):
     rgb = np.dstack((r, g, b))
     return rgb
 
-def createEncoding(source_dir, dest_dir, encodeDIR='seg', segName='semantic_seg', new_segName='encoded_seg', postfix='.png'):
+def createEncoding(source_dir, dest_dir, folder_index, encodeDIR='seg', segName='semantic_seg', new_segName='encoded_seg', postfix='.png'):
     """ returns an r, g, b image with the semantic segmentation encoded in the r channel, and the 
     instance segmentation encoded in the g channel. The b channel is all 0s.
 
@@ -289,15 +289,16 @@ def createEncoding(source_dir, dest_dir, encodeDIR='seg', segName='semantic_seg'
 
         print(f"processing {afile}: {i+1} out of {total_files}")
         semseg_filepath = os.path.join(source_dir, afile) # full path of the image to be processed
-        
         encodedsegName = afile.replace(segName, new_segName)
-        semseg_img = cv2.imread(semseg_filepath, cv2.IMREAD_GRAYSCALE)
-        
+        np_img = np.array(Image.open(semseg_filepath))
+        if len(np_img.shape) == 2: 
+          semseg_img = cv2.imread(semseg_filepath, cv2.IMREAD_GRAYSCALE)
+        else:
+          semseg_img = cv2.imread(semseg_filepath)    
         encoded_seg = mapImageMask_SARS(semseg_img) # create new encoded segmentation image
         encoded_seg = Image.fromarray(encoded_seg.astype('uint8'), 'RGB') # create a PIL image from np array
-        encoded_seg.save(os.path.join(encoded_segdestdir, encodedsegName)) # save the image to disk
+        encoded_seg.save(os.path.join(encoded_segdestdir, encodedsegName.replace('.tif', str(folder_index)+'.tif'))) # save the image to disk
         
-
 def main():
     
     if "win" in sys.platform:
@@ -307,16 +308,17 @@ def main():
     HOME = os.path.join(startpath, 'home',os.getlogin())
     print(HOME)
     root_dir = os.path.join(HOME, 'IMPACT', 'Simulation', 'Data_Collection')
-    imagedir = os.path.join(root_dir, 'Sentinal_SARS', 'C1_clc_data')
+    for i in range(1, 4):
+      imagedir = os.path.join(root_dir, 'Sentinal_SARS', 'C'+str(i)+'_clc_data')
   
-    semseg = 'clc_C1'
-    postfix = '.tif'
-    encodedDEST = 'Sentinal_SARS_Modified'
+      semseg = 'clc_C'+str(i)
+      postfix = '.tif'
+      encodedDEST = 'Sentinal_SARS_Modified'
     
     
-    #source_dir, dest_dir, encodeDIR='seg', segName='semantic_seg', new_segName='encoded_seg', postfix='.png'
+      #source_dir, dest_dir, encodeDIR='seg', segName='semantic_seg', new_segName='encoded_seg', postfix='.png'
 
-    createEncoding(imagedir, root_dir, encodedDEST, semseg, postfix=postfix)
+      createEncoding(imagedir, root_dir, i, encodedDEST, semseg, postfix=postfix)
 
 if __name__ == "__main__":
     main()
