@@ -20,22 +20,13 @@
 #  Revision     Date                        Release Comment
 #  --------  ----------  ------------------------------------------------------
 #    1.0     10/30/2023  Initial Release
+#    2.0     03/27/2024  Bug fixes 
 #
 #  File Description
 #  ----------------
 #  
-#
-#   Define a colormap for our semantic segmentation files
-#   index, color, name
-#   ____________________
-
-#   1, (0, 0, 0), "bedrock"
-#   2, (42,114,60), "sky"
-#   3, (89, 89, 89), "sand/ground"
-#   4, (255, 0, 0), "ventifact"
-#   5, (0,255,0), "science_rock"
-#   6, (0, 0, 255), "blueberry"
-#
+#  This program will train a model to make class predictions for each pixel in an image(semantic segmentation masks)
+#   
 #
 #  *Classes/Functions organized by order of appearance
 #
@@ -45,15 +36,16 @@
 #
 #  CLASSES
 #  -------
-#   None
+#   TransformerDataSet
+#   ImageSegmentationDataset
 #
 #  FUNCTIONS
 #  ---------
-#   flip_colors
-#   create_image_mask_dictionary
-#   encodeImageMask
-#   mapImageMask
-#   createEncoding
+#   create_image_fromdataset
+#   collate_fn
+#   visualize_instance_seg_mask
+#   create_loss_plots
+#   main
 #
 '''
 #################################################################################################
@@ -63,19 +55,17 @@ import os
 import sys
 
 # extremely important that you change these variables for your particular setup.
-VIR_ENV_DIR = 'vir_env'
-VIR_ENV_NAME = 'simulation'
-HOME = os.path.join('/home',os.getlogin())
-# I put my virtual environment in /home/cspooner/vir_env/simulation
+VIR_ENV_DIR = 'v_env'
+VIR_ENV_NAME = 'maskformer'
+PYTHON_TYPE = 'python3.7'
+user = os.getlogin()
+# I put my virtual environment in /home/cspooner/v_env/maskformer
 
-# For use on the cluster only. 
-if sys.platform == 'linux':
-    
-    SIM_VIRENV_LIBS = os.path.join(HOME, VIR_ENV_DIR, VIR_ENV_NAME, 'lib','python3.7', 'site-packages')
-    print(SIM_VIRENV_LIBS)
+virenv_libs = f'/home/{user}/{VIR_ENV_DIR}/{VIR_ENV_NAME}/lib/{PYTHON_TYPE}/site-packages'
+print(virenv_libs)
 
-    if SIM_VIRENV_LIBS not in sys.path:
-        sys.path.insert(0,SIM_VIRENV_LIBS)
+if virenv_libs not in sys.path:
+    sys.path.insert(0,virenv_libs)
 
 #####################################################################################
 
@@ -109,7 +99,7 @@ print("Completed import libraries.")
 
 
 class TransformerDataSet(Dataset):
-    def __init__(self, root_dir, img_dir=None, seg_dir=None, imgFrag=None, segFrag=None):
+    def __init__(self, root_dir, img_dir=None, seg_dir=None, imgFrag=None, segFrag=None, imgfix=".png", segfix=".png"):
         images = []
         annotations = []
         file_name = []
@@ -131,7 +121,7 @@ class TransformerDataSet(Dataset):
                 #print(f"{f} is a valid image...")
 
                 #check to see if the segfile exists
-                seg_f = f.replace(imgFrag, segFrag)
+                seg_f = f.replace(imgFrag, segFrag).replace(imgfix, segfix)
                 seg_file_path = os.path.join(seg_path, seg_f)
                 if os.path.exists(seg_file_path):
                     img = Image.open(file_path).convert('L')
@@ -152,11 +142,12 @@ class TransformerDataSet(Dataset):
     def __len__(self):
         return len(self.images)
 
-    def train_val_dataset(dataset, val_split=0.30, random_state=None, shuffle=True, train_idx=None, val_idx=None):
+    def train_val_dataset(dataset, val_split=0.30, train_split=0.70, random_state=None, shuffle=True, train_idx=None, val_idx=None):
         if train_idx is None or val_idx is None:
-            train_idx, valtest_idx = train_test_split(list(range(len(dataset))), test_size=val_split, shuffle=shuffle, random_state=random_state)
-            print(len(valtest_idx))
-            val_idx, test_idx = train_test_split(list(range(len(valtest_idx))), test_size=0.5, shuffle=shuffle, random_state=random_state)
+            train_idx, valtest_idx = train_test_split(list(range(len(dataset))), test_size=val_split, train_size=train_split, 
+                shuffle=shuffle, random_state=random_state)
+            val_idx, test_idx = train_test_split(list(range(len(valtest_idx))), test_size=0.5, train_size=0.5, 
+                shuffle=shuffle, random_state=random_state)
         datasets = {}
         datasets['train'] = Subset(dataset, train_idx)
 
@@ -263,23 +254,23 @@ def collate_fn(examples):
         "class_labels": class_labels
     }
 
-def visualize_instance_seg_mask(mask):
+def visualize_instance_seg_mask(mask, label2color):
+    
     # Initialize image with zeros with the image resolution
     # of the segmentation mask and 3 channels
     image = np.zeros((mask.shape[0], mask.shape[1], 3))
     # Create labels
     labels = np.unique(mask)
-    label2color = {
-        label: (
-            random.randint(0, 255),
-            random.randint(0, 255),
-            random.randint(0, 255),
-        )
-        for label in labels
-    }
+    unknown_color = (219, 52, 235)
+
     for height in range(image.shape[0]):
         for width in range(image.shape[1]):
-            image[height, width, :] = label2color[mask[height, width]]
+            if mask[height, width] not in label2color.keys():
+              colormask = unknown_color
+              print(f'{mask[height, width]} isnt an index in the colormap you passed. setting the color to {colormask}')
+            else:
+              colormask = mask[height, width]
+            image[height, width, :] = label2color[colormask]
     image = image / 255
     return image
 
@@ -303,51 +294,64 @@ def create_loss_plots(avg_train, avg_val, timestamp, savepath):
 def main():
 
     check_preprocessed = False
-    EPOCHS = 1
+    EPOCHS = 25
     NOW = datetime.now().strftime("%Y%m%d_%H%M%S")
-    ID2LABEL = {0:'bedrock', 1:'sky', 2:'sand/ground', 3:'ventifact', 4:'science_rock', 5:'blueberry'}
-    LABEL2ID = {'bedrock':0, 'sky':1, 'sand':2, 'ventifact':3, 'science_rock':4, 'blueberry':5}
+    ID2LABEL = {0:'soil', 1:'bedrock', 2:'sand', 3:'bigrock', 255:'unknown'}
+    LABEL2ID = {'soil':0, 'bedrock':1, 'sand':2, 'bigrock':3, 'unknown':255}
+    
+    label2color = {255:(0,0,0), 0:(107,113,115), 1:(92,189,224), 2:(20,201,150), 3:(209,65,20)}
 
-    PROJECTDIR = 'simulations'
-    ROOTDIR = os.path.join(HOME, PROJECTDIR, 'Data_Collection','test_dataset')
-    IMGDIR = 'realimage'
+    PROJECTDIR = 'IMPACT'
+    subproject = 'ai4mars'
+    DATADIR = f'/home/{user}/{PROJECTDIR}/ai4mars-dataset-merged-0.1/re_encoded_files'
+    SAVEROOT = f'/home/{user}/{PROJECTDIR}/{subproject}'
+    
+    IMGDIR = 'images_train'
     IFRAG = 'realimage'
-    SEGDIR = 'seg'
-    SFRAG = 'encoded_seg'
+    SEGDIR = 'labels_train'
+    SFRAG = 'segment'
+    IMFIX = '.JPG'
+    LABFIX = '.png'
+    IMAGE_SIZE_X = 512
+    IMAGE_SIZE_Y = 512
+    THRESHOLD = 0.5
 
     # Define the name of the mode
     MODEL_NAME = "facebook/maskformer-swin-base-ade"
     LEARNING_RATE = 5e-5
     BATCH_SIZE = 4
 
-    saveweights_location = os.path.join(HOME, PROJECTDIR,f'weights_{NOW}')
-    saveresults_location = os.path.join(HOME, PROJECTDIR,f'results_{NOW}')
+    saveweights_location = os.path.join(SAVEROOT, f'weights_{NOW}')
+    saveresults_location = os.path.join(SAVEROOT, f'results_{NOW}')
 
     #make locations if they dont already exist
     os.makedirs(saveweights_location, exist_ok=True)
     os.makedirs(saveresults_location, exist_ok=True)
 
-    ###
-    # NEED TO GET THE MEAN AND STD OF DATASET
-    ###
 
     # Define the configurations of the transforms specific
-    # to the dataset used
-    ADE_MEAN = np.array([123.675, 116.280, 103.530]) / 255
-    ADE_STD = np.array([58.395, 57.120, 57.375]) / 255
+    # to the dataset used.
 
+    # this is the mean and std for the AI4MARS dataset.
+    ADE_MEAN = np.array([58.514, 58.514, 58.514]) / 255
+    ADE_STD = np.array([3.838, 3.838, 3.838]) / 255
+    
     #create dataset
-    tf_dataset = TransformerDataSet(ROOTDIR, IMGDIR, SEGDIR, IFRAG, SFRAG)
+    tf_dataset = TransformerDataSet(DATADIR, IMGDIR, SEGDIR, IFRAG, SFRAG, IMFIX, LABFIX)
 
     training_val_dataset = tf_dataset.train_val_dataset()
     train = training_val_dataset["train"]
     validation = training_val_dataset["validation"]
     test = training_val_dataset["test"]
 
+    print(len(train))
+    print(len(validation))
+    print(len(test))
+
     # Create the MaskFormer Image Preprocessor
     processor = MaskFormerImageProcessor(
         do_reduce_labels=True,
-        size=(512, 512),
+        size=(IMAGE_SIZE_X, IMAGE_SIZE_Y),
         ignore_index=255,
         do_resize=False,
         do_rescale=False,
@@ -372,7 +376,7 @@ def main():
 
     # Build the augmentation transforms
     train_val_transform = A.Compose([
-        A.Resize(width=512, height=512),
+        A.Resize(width=IMAGE_SIZE_X, height=IMAGE_SIZE_Y),
         A.HorizontalFlip(p=0.3),
         A.Normalize(mean=ADE_MEAN, std=ADE_STD),
     ])
@@ -416,7 +420,7 @@ def main():
     )
 
     # Use GPU if available
-    print(torch.cuda.is_available())
+    print(f'Is cuda available? {torch.cuda.is_available()}')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     # Initialize Adam optimizer
@@ -488,7 +492,6 @@ def main():
 
     processor.save_pretrained(saveweights_location)
 
-   
     # Use random test image
     index = random.randint(0, len(test)-1)
     image = test[index]["image"].convert("RGB")
@@ -518,21 +521,27 @@ def main():
     for info in result["segments_info"]:
         print(f"  {info}")
 
-    instance_seg_mask_disp = visualize_instance_seg_mask(instance_seg_mask)
+    instance_seg_mask_disp = visualize_instance_seg_mask(instance_seg_mask, label2color)
+    groundTruthAnn = np.array(test[index]["annotation"])[:,:,0]-1
+    groundtruth_seg_mask_disp = visualize_instance_seg_mask(groundTruthAnn, label2color)
     plt.figure(figsize=(10, 10))
-    for plot_index in range(2):
+    plt.style.use('_mpl-gallery-nogrid')
+    for plot_index in range(3):
         if plot_index == 0:
             plot_image = image
-            title = "Original"
+            title = "Original Image"
+        elif plot_index == 1:
+            plot_image = groundtruth_seg_mask_disp
+            title = 'Ground Truth Annotation'
         else:
             plot_image = instance_seg_mask_disp
-            title = "Segmentation"
+            title = "Predicted Segmentation"
 
-        plt.subplot(1, 2, plot_index+1)
+        plt.subplot(1, 3, plot_index+1)
         plt.imshow(plot_image)
         plt.title(title)
-        plt.savefig(os.path.join(saveresults_location, f"trainingresult_{NOW}.png"), dpi = 300)
-        plt.axis("off")
+        plt.savefig(os.path.join(saveresults_location, f"trainingresult_{NOW}.png"), dpi = 300, bbox_inches='tight')
+        #plt.axis("off")
 
     # Load Mean IoU metric
     metrics = evaluate.load("mean_iou")
@@ -544,7 +553,8 @@ def main():
         image = validation[idx]["image"].convert("RGB")
         target_size = image.size[::-1]
         # Get ground truth semantic segmentation map
-        annotation = np.array(validation[idx]["annotation"])[:,:,0]
+        annotation = np.array(validation[idx]["annotation"], dtype='uint16')[:,:,0]
+        print(np.unique(annotation))
         # Replace null class (0) with the ignore_index (255) and reduce labels
         annotation -= 1
         annotation[annotation==-1] = 255
@@ -560,6 +570,7 @@ def main():
         result = processor.post_process_semantic_segmentation(outputs, target_sizes=[target_size])[0]
         semantic_seg_mask = result.cpu().detach().numpy()
         preds.append(semantic_seg_mask)
+    print("completed stuff")
     results = metrics.compute(
         predictions=preds,
         references=ground_truths,
