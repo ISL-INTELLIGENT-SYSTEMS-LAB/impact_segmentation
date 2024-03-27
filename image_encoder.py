@@ -100,7 +100,7 @@ def flip_colors(color):
     flipped_color = (b, g, r)
     return flipped_color
 
-def create_image_mask_dictionary(segImage):
+def create_image_mask_dictionary(segImage, approved_colors=None):
     """ creates a dictionary of colors that map to a binary mask created by those colors
 
     Parameters
@@ -118,18 +118,10 @@ def create_image_mask_dictionary(segImage):
 
     """
 
-    # instance seg does not need to define sky colors, but semantic seg does
-
-    SKY_COLORS_LOW = (42,114,60)
-    SKY_COLORS_HIGH = (43, 116, 61)
-
-
     #if the image was opened in opencv, which opens them in bgr, then flip everything
 
     if hasattr(segImage, 'shape'):
         h, w, _ = segImage.shape
-        SKY_COLORS_LOW = flip_colors(SKY_COLORS_LOW)
-        SKY_COLORS_HIGH = flip_colors(SKY_COLORS_HIGH)
 
     else:
         w, h = segImage.size
@@ -142,18 +134,15 @@ def create_image_mask_dictionary(segImage):
 
     for k in colors:
         color = tuple(k)
-
-        if color >= SKY_COLORS_LOW and color <= SKY_COLORS_HIGH:
-            color = SKY_COLORS_LOW
-
-        if color not in collections.keys():
-
-            if color == SKY_COLORS_LOW:
-                mask = cv2.inRange(object_seg, SKY_COLORS_LOW, SKY_COLORS_HIGH)
-            else:
-                mask = cv2.inRange(object_seg, k, k)
-
-            collections[color] = mask
+        
+        if approved_colors is not None:
+          if color not in collections.keys() and color in approved_colors:
+              mask = cv2.inRange(object_seg, k, k)
+              collections[color] = mask
+        else:
+          if color not in collections.keys():
+              mask = cv2.inRange(object_seg, k, k)
+              collections[color] = mask
 
     return(collections)
 
@@ -182,9 +171,8 @@ def encodeImageMask(segImage, colors2indexMap=None):
         all of the binary masks from a segmentation image, mapped to various indices
     """
 
-    collections = create_image_mask_dictionary(segImage)
+    collections = create_image_mask_dictionary(segImage, colors2indexMap)
     results = []
-    index = 0
 
     if colors2indexMap is not None:
         newmap = {}
@@ -197,7 +185,7 @@ def encodeImageMask(segImage, colors2indexMap=None):
             newmap = colors2indexMap
 
 
-    for color in collections.keys():
+    for index, color in enumerate(collections.keys()):
         mask = collections[color]
         h, w = np.array(mask).shape
 
@@ -209,7 +197,6 @@ def encodeImageMask(segImage, colors2indexMap=None):
         result = cv2.bitwise_and(r,r, mask= mask)
         results.append(result)
 
-        index += 1
 
     final_result = results[0]
     for result in results:
@@ -219,7 +206,7 @@ def encodeImageMask(segImage, colors2indexMap=None):
 
     return final_result
 
-def mapImageMask(semSegImage, inSegImage, colors2indexMap):
+def mapImageMask(colors2indexMap, semSegImage, inSegImage=None):
     """ returns an r, g, b image with the semantic segmentation encoded in the r channel, and the 
     instance segmentation encoded in the g channel. The b channel is all 0s.
 
@@ -246,15 +233,19 @@ def mapImageMask(semSegImage, inSegImage, colors2indexMap):
 
     # b channel is always 0
 
-    r = encodeImageMask(semSegImage, colors2indexMap)
-    g = encodeImageMask(inSegImage)
+    r = encodeImageMask(semSegImage, colors2indexMap) + 1
+    
+    if inSegImage is not None:
+      g = encodeImageMask(inSegImage) + 1
+    else:
+      g = encodeImageMask(semSegImage, colors2indexMap) + 1
     b = np.zeros_like(r)
 
     # this last step combines all 3 arrays so that we can create an image from them.
     rgb = np.dstack((r, g, b))
     return rgb
 
-def createEncoding(source_dir, dest_dir, map_col, imDIR='realimage', encodeDIR='seg', segName='semantic_seg', inName='instance_seg'):
+def createEncoding(source_dir, dest_dir, map_col, imDIR='realimage', encodeDIR='seg', segName='semantic_seg', inName='instance_seg', seg_POSTFIX='.png', in_POSTFIX='.png'):
     """ returns an r, g, b image with the semantic segmentation encoded in the r channel, and the 
     instance segmentation encoded in the g channel. The b channel is all 0s.
 
@@ -303,8 +294,8 @@ def createEncoding(source_dir, dest_dir, map_col, imDIR='realimage', encodeDIR='
     all_files = os.listdir(source_dir)
     # make sure that only png files are being process. Should probably change this to check
     # for valid images, not just png files.
-    semseg_files = [x for x in all_files if x.endswith('.png') and segName in x]
-    inseg_files = [x for x in all_files if x.endswith('.png') and inName in x]
+    semseg_files = [x for x in all_files if x.endswith(seg_POSTFIX) and segName in x]
+    inseg_files = [x for x in all_files if x.endswith(in_POSTFIX) and inName in x]
     total_files = len(semseg_files)
 
     for i, afile in enumerate(semseg_files):
@@ -317,7 +308,7 @@ def createEncoding(source_dir, dest_dir, map_col, imDIR='realimage', encodeDIR='
         encodedsegName = afile.replace(segName, "encoded_seg")
         semseg_img = cv2.imread(semseg_filepath)
         inseg_img = cv2.imread(inseg_filepath)
-        encoded_seg = mapImageMask(semseg_img, inseg_img, map_col) # create new encoded segmentation image
+        encoded_seg = mapImageMask(map_col, semseg_img, inseg_img) # create new encoded segmentation image
         encoded_seg = Image.fromarray(encoded_seg.astype('uint8'), 'RGB') # create a PIL image from np array
         encoded_seg.save(os.path.join(encoded_segdestdir, encodedsegName)) # save the image to disk
         copy2(os.path.join(source_dir, realName), os.path.join(image_destdir, realName))
@@ -325,32 +316,19 @@ def createEncoding(source_dir, dest_dir, map_col, imDIR='realimage', encodeDIR='
 def main():
     # Define a colormap for our situation : Still need to deal with the sky
     # for now any color that isnt in this list is assumed to be sky
-    colors2index = {(0, 0, 0):1, (42,114,60):2, (89, 89, 89):3, (255, 0, 0):4, (0,255,0):5, (0, 0, 255):6}
+    colors2index = {(0, 0, 0):1, (89, 89, 89):2, (255, 0, 0):3, (0,255,0):4, (0, 0, 255):5}
 
-    #index2colors = {1:(0, 0, 0), 2:(42,114,60), 3:(89, 89, 89), 4:(255, 0, 0), 5:(0,255,0), 6:(0, 0, 255)}
+    #name2colors = {"bedrock":(0, 0, 0), "sand/ground":(89, 89, 89), 
+                    #"ventifact":(255, 0, 0), "science_rock":(0,255,0), "blueberry":(0, 0, 255)}
 
-    #name2index = {"bedrock":1, "sky":2, "sand/ground":3, "ventifact":4, "science_rock":5, "blueberry":6}
 
-    #index2name = {2:"bedrock", 2:"sky", 3:"sand/ground", 4:"ventifact", 5:"science_rock", 6:"blueberry"}
+    user = os.getlogin()
 
-    #colors2name = {(0, 0, 0):"bedrock", (42,114,60):"sky", (89, 89, 89):"sand/ground", 
-    #               (255, 0, 0):"ventifact", (0,255,0):"science_rock", (0, 0, 255):"blueberry"}
-
-    #name2colors = {"bedrock":(0, 0, 0), "sky":(42,114,60), "sand/ground":(89, 89, 89), 
-    #                "ventifact":(255, 0, 0), "science_rock":(0,255,0), "blueberry":(0, 0, 255)}
-
-    if "win" in sys.platform:
-        startpath = "\\"
-    else:
-        startpath = "/"
-    HOME = os.path.join(startpath, 'home',os.getlogin())
-    print(HOME)
-    root_dir = os.path.join(HOME, 'IMPACT', 'Data_Collection')
+    root_dir = os.path.join(f'/home/{user}/IMPACT/Data_Collection/Mars_Simulation')
     imagedir = os.path.join(root_dir, 'ImgDataSet6')
   
     semseg = 'semantic_seg'
     inseg = "instance_seg"
-
 
     createEncoding(imagedir, root_dir, colors2index)
 
