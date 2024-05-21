@@ -70,7 +70,6 @@ user = os.getlogin()
 # I put my virtual environment in /home/cspooner/v_env/maskformer
 
 virenv_libs = f'/home/{user}/{VIR_ENV_DIR}/{VIR_ENV_NAME}/lib/{PYTHON_TYPE}/site-packages'
-print(virenv_libs)
 
 if virenv_libs not in sys.path:
     sys.path.insert(0,virenv_libs)
@@ -105,6 +104,7 @@ from transformers import (
 
 #from huggingface_hub import notebook_login
 if __name__ == "__main__":
+  print(virenv_libs)
   print("Completed import libraries.")
   
 
@@ -264,8 +264,9 @@ def collate_fn(examples):
         "class_labels": class_labels
     }
 
-def visualize_instance_seg_mask(mask, label2color):
+def visualize_instance_seg_mask(mask, label2color, masktype='groundtruth'):
     mask[mask==-1] = 255
+    print(f"mask type is {masktype}, with unique values {np.unique(mask)}")
     # Initialize image with zeros with the image resolution
     # of the segmentation mask and 3 channels
     image = np.zeros((mask.shape[0], mask.shape[1], 3))
@@ -275,11 +276,10 @@ def visualize_instance_seg_mask(mask, label2color):
 
     for height in range(image.shape[0]):
         for width in range(image.shape[1]):
-            if mask[height, width] not in label2color.keys():
-              colormask = unknown_color
-              print(f'{mask[height, width]} isnt an index in the colormap you passed. setting the color to {colormask}')
-            else:
-              colormask = mask[height, width]
+            colormask = mask[height, width]
+            if colormask not in label2color.keys():
+              print(f'{colormask} isnt an index in the colormap you passed. setting the color to unknown color {unknown_color}')
+              label2color[colormask] = unknown_color
             image[height, width, :] = label2color[colormask]
     image = image / 255
     return image
@@ -313,7 +313,7 @@ def main():
 
     PROJECTDIR = 'IMPACT'
     subproject = 'ai4mars'
-    DATADIR = f'/home/{user}/{PROJECTDIR}/ai4mars-dataset-merged-0.1/re_encoded_files'
+    DATADIR = f'/home/{user}/{PROJECTDIR}/ai4mars-dataset-merged-0.1/re_encoded_files_V2'
     SAVEROOT = f'/home/{user}/{PROJECTDIR}/{subproject}'
     
     IMGDIR = 'images_train'
@@ -330,7 +330,7 @@ def main():
     # Define the name of the mode
     MODEL_NAME = "facebook/maskformer-swin-base-ade"
     LEARNING_RATE = 5e-5
-    BATCH_SIZE = 4
+    BATCH_SIZE = 16
 
     saveweights_location = os.path.join(SAVEROOT, f'weights_{NOW}')
     saveresults_location = os.path.join(SAVEROOT, f'results_{NOW}')
