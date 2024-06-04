@@ -152,17 +152,14 @@ class TransformerDataSet(Dataset):
     def __len__(self):
         return len(self.images)
 
-    def train_val_dataset(dataset, val_split=0.30, train_split=0.70, random_state=None, shuffle=True, train_idx=None, val_idx=None):
-        if train_idx is None or val_idx is None:
-            train_idx, valtest_idx = train_test_split(list(range(len(dataset))), test_size=val_split, train_size=train_split, 
-                shuffle=shuffle, random_state=random_state)
-            val_idx, test_idx = train_test_split(list(range(len(valtest_idx))), test_size=0.5, train_size=0.5, 
-                shuffle=shuffle, random_state=random_state)
+    def train_val_dataset(dataset, val_split=0.30, train_split=0.70, random_state=None, shuffle=True):
+        train_idx, val_idx = train_test_split(list(range(len(dataset))), test_size=val_split, train_size=train_split, 
+            shuffle=shuffle, random_state=random_state)
+            
         datasets = {}
         datasets['train'] = Subset(dataset, train_idx)
-
         datasets['validation'] = Subset(dataset, val_idx)
-        datasets['test'] = Subset(dataset, test_idx)
+        
         return datasets
 
 class ImageSegmentationDataset(Dataset):
@@ -266,7 +263,7 @@ def collate_fn(examples):
 
 def visualize_instance_seg_mask(mask, label2color, masktype='groundtruth'):
     mask[mask==-1] = 255
-    print(f"mask type is {masktype}, with unique values {np.unique(mask)}")
+    #print(f"mask type is {masktype}, with unique values {np.unique(mask)}")
     # Initialize image with zeros with the image resolution
     # of the segmentation mask and 3 channels
     image = np.zeros((mask.shape[0], mask.shape[1], 3))
@@ -300,7 +297,41 @@ def create_loss_plots(avg_train, avg_val, timestamp, savepath):
     plt.subplots_adjust(hspace =0.5)
     plt.savefig(os.path.join(savepath, f'Train_and_Val_loss_{timestamp}.png'), dpi = 300)
 
-
+def get_inference(datasetObj, processor, device, model, imfix, threshold=None):
+    image = datasetObj["image"].convert("RGB")
+    
+    #print(f'image filename is {filename}')
+    target_size = image.size[::-1]
+    # Preprocess image
+    inputs = processor(images=image, return_tensors="pt").to(device)
+    # Inference
+    model.eval()
+    with torch.no_grad():
+        outputs = model(**inputs)
+  
+    # Let's print the items returned by our model and their shapes
+    #print("[INFO] Displaying shape of the outputs...")
+    #for key, value in outputs.items():
+    #    print(f"  {key}: {value.shape}")
+    
+    if threshold is not None:
+      # Post-process results to retrieve instance segmentation maps
+      result = processor.post_process_instance_segmentation(
+          outputs,
+          threshold=threshold,
+          target_sizes=[target_size]
+      )[0] # we pass a single output therefore we take the first result (single)
+    else:
+      result = processor.post_process_instance_segmentation(
+          outputs,
+          target_sizes=[target_size]
+      )[0] # we pass a single output therefore we take the first result (single)
+  
+    instance_seg_mask = result["segmentation"].cpu().detach().numpy()
+    
+    return instance_seg_mask
+ 
+ 
 def main():
 
     check_preprocessed = False
