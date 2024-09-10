@@ -1,0 +1,7 @@
+docker build -t impact_gdino_test .
+
+docker run -e DISPLAY=host.docker.internal:0 -v "C:\Users\casab\Documents\IMPACT\gdino":/workspace -it --gpus all impact_gdino_test
+
+git clone https://github.com/longzw1997/Open-GroundingDino.git
+python Open-GroundingDino/models/GroundingDINO/ops/setup.py build
+python -m pip install  Open-GroundingDino/models/GroundingDINO/ops
