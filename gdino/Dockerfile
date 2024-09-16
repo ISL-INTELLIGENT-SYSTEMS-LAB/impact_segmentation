@@ -44,7 +44,7 @@ RUN pip install filetype
 #RUN git clone https://github.com/fundamentalvision/Deformable-DETR.git
 #RUN pip install Deformable-DETR/models/ops
 RUN pip install -r requirements.txt
-RUN git clone https://github.com/longzw1997/Open-GroundingDino.git /workspace/gdino
+#RUN git clone https://github.com/longzw1997/Open-GroundingDino.git /workspace/gdino
 RUN wget https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha2/groundingdino_swinb_cogcoor.pth -P /workspace/weights/gdino
 RUN wget https://huggingface.co/google-bert/bert-base-uncased/blob/main/config.json -P /workspace/weights/bert-base-uncased
 RUN wget https://huggingface.co/google-bert/bert-base-uncased/blob/main/pytorch_model.bin -P /workspace/weights/bert-base-uncased
