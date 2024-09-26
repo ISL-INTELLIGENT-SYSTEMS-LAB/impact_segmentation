@@ -41,8 +41,6 @@ RUN pip install packaging wheel
 RUN pip install pycocotools faster-coco-eval onnx
 RUN pip install torchmetrics
 RUN pip install filetype
-#RUN git clone https://github.com/fundamentalvision/Deformable-DETR.git
-#RUN pip install Deformable-DETR/models/ops
 RUN pip install -r requirements.txt
 #RUN git clone https://github.com/longzw1997/Open-GroundingDino.git /workspace/gdino
 RUN wget https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha2/groundingdino_swinb_cogcoor.pth -P /workspace/weights/gdino
