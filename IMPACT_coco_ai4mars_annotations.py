@@ -365,16 +365,19 @@ def main():
 
     #constants
     
-    ROOTWALKDIR = "/home/cspooner/IMPACT/Data_Collection/Mars_Simulation"
-    JSON_FILENAME = 'FSU_ISL_IMPACT_mars_simulation.json'
+    ROOTWALKDIR = "C:/Users/Dr. B/Documents/grounding/ai4mars-dataset/val"
+    JSON_FILENAME = 'val_FSU_ISL_IMPACT_ai4mars_real.json'
     
-    IPAT_DIR = 'augmented_images'
-    SPAT_DIR = 'augmented_seg'
-    IMGPOSTFIX = '.png'
+    IPAT_DIR = 'images'
+    SPAT_DIR = 'labels'
+    IMGPOSTFIX = '.JPG'
     SEGPOSTFIX = '.png'
-    IPAT = '_realimage'
-    SPAT = '_encoded_seg'
+    IPAT = ''
+    SPAT = ''
     
+    contributor = ['Catherine Spooner','Natalie Griffin', 'Ashley Sutherland', 'et al.']        
+
+    category = ['soil', 'bedrock', 'sand', 'bigrock', 'unknown']
     img_dir = os.path.join(ROOTWALKDIR, IPAT_DIR)
     seg_dir = os.path.join(ROOTWALKDIR, SPAT_DIR)
 
@@ -388,7 +391,7 @@ def main():
             json_object = json.load(infile)
                    
     annotation_dict = create_annotation_file(img_dir, seg_dir, IPAT, SPAT, imgpostFix=IMGPOSTFIX, segpostFix=SEGPOSTFIX, 
-          json_file=json_object, jsonFileName=JSON_FILENAME)  
+          json_file=json_object, jsonFileName=JSON_FILENAME, category=category, contributor=contributor)  
 
 if __name__ == "__main__":
     main()
