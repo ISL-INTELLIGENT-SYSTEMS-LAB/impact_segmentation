@@ -1,0 +1,26 @@
+How to setup OpenGrounding for ai4mars-dataset
+
+
+Downloads 
+Ai4mars dataset
+Docker Desktop -If you on a windows machine be sure to get docker
+
+ISL-INTELLIGENT-SYSTEMS-LAB
+Dockerfile
+docker_cmds.text
+requirements.txt
+
+
+	
+
+change train_dist.sh script
+change the pretrain_model_path and the text_encoder_type
+	 --pretrain_model_path /gdino/weigths/gdinoswin/groundingdino_swinb_cogcoor.pth \
+        --options text_encoder_type=/gdino/weights/bert_base_uncased
+
+change cfg_odvg script
+	backbone= "swin_B_384_22k" (change the backbone from swin_T to swin_B)
+	#use_coco_eval = True (Comment out and add the two lines below)
+	use_coco_eval = False
+	label_list=['soil', 'bedrock', 'sand', 'big rock','unknown']
+
