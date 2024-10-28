@@ -25,12 +25,6 @@ RUN rm -rf /var/lib/apt/lists/*
 # Set Python 3.11 as the default python3
 RUN ln -s /usr/bin/python3 /usr/local/bin/python
 
-# Verify Python and CUDA installation
-RUN python --version 
-#RUN nvcc --version
-
-# Set a working directory
-WORKDIR /workspace
 
 # Install any required Python packages (uncomment if you have a requirements.txt)
 COPY requirements.txt .
@@ -42,10 +36,22 @@ RUN pip install pycocotools faster-coco-eval onnx
 RUN pip install torchmetrics
 RUN pip install filetype
 RUN pip install -r requirements.txt
-#RUN git clone https://github.com/longzw1997/Open-GroundingDino.git /workspace/gdino
-RUN wget https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha2/groundingdino_swinb_cogcoor.pth -P /workspace/weights/gdino
-RUN wget https://huggingface.co/google-bert/bert-base-uncased/blob/main/config.json -P /workspace/weights/bert-base-uncased
-RUN wget https://huggingface.co/google-bert/bert-base-uncased/blob/main/pytorch_model.bin -P /workspace/weights/bert-base-uncased
+
+WORKDIR /gdino
+RUN git clone https://github.com/longzw1997/Open-GroundingDino.git
+
+WORKDIR /gdino/weights/gdinoswin
+RUN wget https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha2/groundingdino_swinb_cogcoor.pth
+
+WORKDIR /gdino/weights/bert-base-uncased
+RUN wget https://huggingface.co/google-bert/bert-base-uncased/resolve/main/config.json
+RUN wget https://huggingface.co/google-bert/bert-base-uncased/resolve/main/model.safetensors
+RUN wget https://huggingface.co/google-bert/bert-base-uncased/resolve/main/tokenizer.json
+RUN wget https://huggingface.co/google-bert/bert-base-uncased/resolve/main/tokenizer_config.json
+RUN wget https://huggingface.co/google-bert/bert-base-uncased/resolve/main/vocab.txt
+
+# Set a working directory
+WORKDIR /workspace
 
 # If you want to run a script, you can add it like this
 # COPY your_script.py .
