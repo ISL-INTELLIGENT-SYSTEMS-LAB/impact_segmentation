@@ -1,7 +1,14 @@
 docker build -t impact_gdino_test .
 
-docker run -e DISPLAY=host.docker.internal:0 -v "C:\Users\casab\Documents\IMPACT\gdino":/workspace -it --gpus all impact_gdino_test
+docker run -v "/home/cspooner/IMPACT1/gdino":/workspace -it --gpus all --shm-size=1g impact_gdino_test
 
-git clone https://github.com/longzw1997/Open-GroundingDino.git
-python Open-GroundingDino/models/GroundingDINO/ops/setup.py build
+'''everything following this must be done in the docker container. the two commented out lines should be done only once unless something happens to the Open-GroundingDino directory and build. Everything else will need to be done every time that the docker container is restarted.'''
+#git clone https://github.com/longzw1997/Open-GroundingDino.git
+#python Open-GroundingDino/models/GroundingDINO/ops/setup.py build
 python -m pip install  Open-GroundingDino/models/GroundingDINO/ops
+
+#test the installation
+python Open-GroundingDino/models/GroundingDINO/ops/test.py
+
+#train the model
+bash ai4mars_train_dist.sh 1 /workspace/Open-GroundingDino/config/cfg_odvg.py /workspace/Open-GroundingDino/config/ai4mars_mixed_odvg.json /workspace/Open-GroundingDino/output
