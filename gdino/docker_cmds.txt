@@ -7,6 +7,9 @@ docker run -v "/home/cspooner/IMPACT1/gdino":/workspace -it --gpus all --shm-siz
 #python Open-GroundingDino/models/GroundingDINO/ops/setup.py build
 python -m pip install  Open-GroundingDino/models/GroundingDINO/ops
 
+'''need to change the main.py file in Open-GroundingDino. Add on line 40:
+parser.add_argument('--use_coco_eval', default=False)
+'''
 #test the installation
 python Open-GroundingDino/models/GroundingDINO/ops/test.py
 
