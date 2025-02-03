@@ -39,49 +39,6 @@ from sam2.sam2_image_predictor import SAM2ImagePredictor
 from PIL import Image
 
 
-
-
-'''class Point:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y'''
- 
-# Checking if a point is inside a polygon
-def point_in_polygon(point, polygon):
-    num_vertices = len(polygon)
-    x, y = point.x, point.y
-    inside = False
- 
-    # Store the first point in the polygon and initialize the second point
-    p1 = polygon[0]
- 
-    # Loop through each edge in the polygon
-    for i in range(1, num_vertices + 1):
-        # Get the next point in the polygon
-        p2 = polygon[i % num_vertices]
- 
-        # Check if the point is above the minimum y coordinate of the edge
-        if y > min(p1.y, p2.y):
-            # Check if the point is below the maximum y coordinate of the edge
-            if y <= max(p1.y, p2.y):
-                # Check if the point is to the left of the maximum x coordinate of the edge
-                if x <= max(p1.x, p2.x):
-                    # Calculate the x-intersection of the line connecting the point to the edge
-                    x_intersection = (y - p1.y) * (p2.x - p1.x) / (p2.y - p1.y) + p1.x
- 
-                    # Check if the point is on the same line as the edge or to the left of the x-intersection
-                    if p1.x == p2.x or x <= x_intersection:
-                        # Flip the inside flag
-                        inside = not inside
- 
-        # Store the current point as the first point for the next iteration
-        p1 = p2
- 
-    # Return the value of the inside flag
-    return inside
-    
-
-
 def show_mask(mask, ax, random_color=False, borders = True):
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
@@ -113,7 +70,7 @@ def show_masks(image, masks, scores, point_coords=None, box_coords=None, input_l
     for i, (mask, score) in enumerate(zip(masks, scores)):
         plt.figure(figsize=(10, 10))
         plt.imshow(image)
-        show_mask(mask, plt.gca(), borders=borders)
+        show_mask(mask, plt.gca(), random_color=True, borders=borders)
         if point_coords is not None:
             assert input_labels is not None
             show_points(point_coords, input_labels, plt.gca())
@@ -143,10 +100,9 @@ def load_image_fsu(image_path: str, w, h) -> Tuple[np.array, torch.Tensor]:
 #import locale
 #locale.getpreferredencoding = lambda: "UTF-8"
 
-img0_pth = r"C:\Users\Dr. B\Documents\IMPACT\scene_matching\20241211-20250127T194220Z-001\20241211\20241211_141903.jpg"
-img1_pth = r"C:\Users\Dr. B\Documents\IMPACT\scene_matching\20241211-20250127T194220Z-001\20241211\20241211_144244.jpg"
+img0_pth = r"E:\IMPACT\data_collection\scene_integration\20241211\20241211_141903.jpg"
+img1_pth = r"E:\IMPACT\data_collection\scene_integration\20241211\20241211_144244.jpg"
 image_pair = [img0_pth, img1_pth]
-
 
 
 # The default config uses dual-softmax.
@@ -183,12 +139,12 @@ with torch.no_grad():
     mconf = batch['mconf'].cpu().numpy()
 
 # Draw
-#color = cm.jet(mconf, alpha=0.7)
-#text = [
-#    'LoFTR',
-#    'Matches: {}'.format(len(mkpts0)),
-#]
-print(mkpts0)
+color = cm.jet(mconf, alpha=0.7)
+text = [
+    'LoFTR',
+    'Matches: {}'.format(len(mkpts0)),
+]
+#print(mkpts0)
 plt.imshow(img0_rgb)
 plt.scatter(mkpts0[:, 0], mkpts0[:, 1], marker="x", color="red", s=200)
 #plt.show()
@@ -196,12 +152,12 @@ plt.scatter(mkpts0[:, 0], mkpts0[:, 1], marker="x", color="red", s=200)
 #fig = make_matching_figure(, img1_raw, mkpts0, mkpts1, color, mkpts0, mkpts1, text)
 
 # A high-res PDF will also be downloaded automatically.
-#make_matching_figure(img0_raw, img1_raw, mkpts0, mkpts1, color, mkpts0, mkpts1, text, path="LoFTR-colab-demo.pdf")
+make_matching_figure(img0_raw, img1_raw, mkpts0, mkpts1, color, mkpts0, mkpts1, text, path="LoFTR-colab-demo.pdf")
 
 
 
-model = load_model(r"C:\Users\Dr. B\Documents\IMPACT\scene_matching\software_for_scenes\GroundingDINO\groundingdino\config\GroundingDINO_SwinT_OGC.py",
-                    r"C:\Users\Dr. B\Documents\IMPACT\scene_matching\software_for_scenes\GroundingDINO\weights\groundingdino_swint_ogc.pth")
+model = load_model(r"E:\IMPACT\scene_integration\software_for_scenes\GroundingDINO\groundingdino\config\GroundingDINO_SwinT_OGC.py",
+                    r"E:\IMPACT\scene_integration\software_for_scenes\GroundingDINO\weights\groundingdino_swint_ogc.pth")
 
 IMAGE_PATH = img0_pth
 TEXT_PROMPT = "blue ball"
@@ -218,8 +174,8 @@ boxes, logits, phrases = predict(
     text_threshold=TEXT_TRESHOLD
 )
 
-checkpoint = r"C:\Users\Dr. B\Documents\IMPACT\scene_matching\software_for_scenes\sam2\checkpoints\sam2.1_hiera_large.pt"
-model_cfg = r"C:\Users\Dr. B\Documents\IMPACT\scene_matching\software_for_scenes\sam2\sam2\configs\sam2.1\sam2.1_hiera_l.yaml"
+checkpoint = r"E:\IMPACT\scene_integration\software_for_scenes\sam2\checkpoints\sam2.1_hiera_large.pt"
+model_cfg = r"E:\IMPACT\scene_integration\software_for_scenes\sam2\sam2\configs\sam2.1\sam2.1_hiera_l.yaml"
 predictor = SAM2ImagePredictor(build_sam2(model_cfg, checkpoint))
 device = torch.device("cuda")
 
@@ -253,6 +209,7 @@ for box in boxes_xyxy:
   print(testmask.shape)
   #plt.imshow(testmask)
   #plt.show()
+  #show_masks(image, masks, scores, box_coords=box)
   
   #ret, thresh = cv2.threshold(testmask, 127, 255, 0)
   
@@ -264,9 +221,9 @@ for box in boxes_xyxy:
   polygon = [Point(x, y) for x, y in blueballshape]
   #print(polygon)
   print(polygon_test)
-  plt.scatter(polygon_test[0], polygon_test[1], marker=".", color="blue", s=200)
+  plt.scatter(polygon_test[0], polygon_test[1], marker=".", color="green", s=100)
   plt.savefig("pointsnInside.jpg", dpi=300)
-  #plt.show()
+  plt.show()
   
   blueBall_poly = Polygon(blueballshape)
   #bluegpd = gpd.GeoSeries(blueBall_poly)
@@ -283,8 +240,8 @@ for box in boxes_xyxy:
         picture0points.append(mkpts0[index])
         picture1points.append(mkpts1[index])
         matchconf.append(mconf[index])
-    else:
-        print("Point is outside the polygon")
+    #else:
+        #print("Point is outside the polygon")
   picture0points=np.array(picture0points)
   picture1points=np.array(picture1points)
   #print(picture0points)
@@ -295,7 +252,7 @@ for box in boxes_xyxy:
     'LoFTR',
     'Matches: {}'.format(len(picture0points)),
 ]
-  make_matching_figure(img0_raw, img1_raw, picture0points, picture1points, color, picture0points, picture1points, text, path="LoFTR-colab-demo.pdf")
+  make_matching_figure(img0_raw, img1_raw, picture0points, picture1points, color, picture0points, picture1points, text, path="LoFTR-colab-demo_2.pdf")
     
   '''
   cv2.drawContours(image, contours, -1, (0, 255, 0), 4)
