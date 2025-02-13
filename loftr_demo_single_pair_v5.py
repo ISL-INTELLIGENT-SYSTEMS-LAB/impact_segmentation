@@ -37,6 +37,8 @@ from groundingdino.util.inference import load_model, load_image, predict, annota
 from software_for_scenes.sam2.sam2.build_sam import build_sam2
 from software_for_scenes.sam2.sam2.sam2_image_predictor import SAM2ImagePredictor
 from PIL import Image
+import os
+from datetime import datetime
 
 
 
@@ -83,7 +85,6 @@ def show_masks(image, masks, scores, point_coords=None, box_coords=None, input_l
         if len(scores) > 1:
             plt.title(f"Mask {i+1}, Score: {score:.3f}", fontsize=18)
         plt.axis('off')
-        plt.show()
 
 def load_image_fsu(image_path: str, w, h) -> Tuple[np.array, torch.Tensor]:
     transform = T.Compose(
@@ -105,24 +106,25 @@ def load_image_fsu(image_path: str, w, h) -> Tuple[np.array, torch.Tensor]:
 
 #### CONSTANTS ####
 
-IMG0_PTH = "C:/Users/Dr. B/Documents/IMPACT/scene_matching/20241211/20241211_144725.jpg"
-IMG1_PTH = "C:/Users/Dr. B/Documents/IMPACT/scene_matching/20241211/20241211_144244.jpg"
+IMG0_PTH = r"C:\Users\casab\Downloads\Rellis_3D_pylon_camera_node\Rellis-3D\00002\pylon_camera_node\frame001143-1581797264_709.jpg"
+IMG1_PTH = r"C:\Users\casab\Downloads\Rellis_3D_pylon_camera_node\Rellis-3D\00002\pylon_camera_node\frame001200-1581797270_409.jpg"
 IMAGE_TYPE = 'outdoor'
-TEXT_PROMPT = " balloon . blue ball . green box"
+TEXT_PROMPT = "find all barriers in picture"
 BOX_TRESHOLD = 0.35
 TEXT_TRESHOLD = 0.25
-LOFTR_INDOOR_PATH = "software_for_scenes/LoFTR/weights/indoor_ds.ckpt"
-LOFTR_OUTDOOR_PATH = "software_for_scenes/LoFTR/weights/outdoor_ds.ckpt"
-GDINO_SCRIPT = "C:/Users/Dr. B/Documents/IMPACT/scene_matching/software_for_scenes/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
-GDINO_WEIGHTS = "C:/Users/Dr. B/Documents/IMPACT/scene_matching/software_for_scenes/GroundingDINO/weights/groundingdino_swint_ogc.pth"
-SAM_CHECKPOINT = "C:/Users/Dr. B/Documents/IMPACT/scene_matching/software_for_scenes/sam2/checkpoints/sam2.1_hiera_large.pt"
-SAM_MODEL_CFG = "C:/Users/Dr. B/Documents/IMPACT/scene_matching/software_for_scenes/sam2/sam2/configs/sam2.1/sam2.1_hiera_l.yaml"
+LOFTR_INDOOR_PATH = r"E:\IMPACT\scene_integration\software_for_scenes\LoFTR\weights\indoor_ds.ckpt"
+LOFTR_OUTDOOR_PATH = r"E:\IMPACT\scene_integration\software_for_scenes\LoFTR\weights\outdoor_ds.ckpt"
+GDINO_SCRIPT = r"E:\IMPACT\scene_integration\software_for_scenes\GroundingDINO\groundingdino\config\GroundingDINO_SwinT_OGC.py"
+GDINO_WEIGHTS = r"E:\IMPACT\scene_integration\software_for_scenes\GroundingDINO\weights\groundingdino_swint_ogc.pth"
+SAM_CHECKPOINT = r"E:\IMPACT\scene_integration\software_for_scenes\sam2\checkpoints\sam2.1_hiera_large.pt"
+SAM_MODEL_CFG = r"E:\IMPACT\scene_integration\software_for_scenes\sam2\sam2\configs\sam2.1\sam2.1_hiera_l.yaml"
 DISPLAY_POINTS_INSIDE = False
 LOFTR_MATCHING_NAME = "LoFTR_matching"
 RESIZE_HEIGHT = 480
 RESIZE_WIDTH = 640
 
-
+OUTPUT_DIR = datetime.now().strftime("%Y%m%d_%H%M")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 image_pair = [IMG0_PTH, IMG1_PTH]
 
@@ -170,13 +172,10 @@ text0 = [
 
 # A high-res PDF will also be downloaded automatically.
 matching_name = f"{LOFTR_MATCHING_NAME}_whole_image.pdf"
-make_matching_figure(img0_raw, img1_raw, mkpts0, mkpts1, color0, mkpts0, mkpts1, text0, path=matching_name)
+make_matching_figure(img0_raw, img1_raw, mkpts0, mkpts1, color0, mkpts0, mkpts1, text0, path=os.path.join(OUTPUT_DIR, matching_name))
 
 
 model = load_model(GDINO_SCRIPT,GDINO_WEIGHTS)
-
-
-IMAGE_PATH = IMG0_PTH
 
 
 image_source0, image0 = load_image_fsu(IMG0_PTH, RESIZE_WIDTH, RESIZE_HEIGHT)
@@ -219,7 +218,10 @@ for i, box in enumerate(boxes_xyxy):
     multimask_output=False,
   )
 
-  #show_masks(pil_image0, masks0, scores0,randomColor=True)
+  show_masks(pil_image0, masks0, scores0,randomColor=True)
+ 
+  image0_maskname = f'{LOFTR_MATCHING_NAME}_{os.path.basename(IMG0_PTH).split(".")[0]}_{phrases[i]}_{i}.jpg'
+  plt.savefig(os.path.join(OUTPUT_DIR, image0_maskname), dpi=300, bbox_inches='tight')
 
   flat_mask = masks0.flatten().reshape(h, w)
 
@@ -267,7 +269,7 @@ for i, box in enumerate(boxes_xyxy):
         
 
         object_matching_name = f"{LOFTR_MATCHING_NAME}_{phrases[i]}.pdf"
-        make_matching_figure(img0_raw, img1_raw, picture0points, picture1points, color1, picture0points, picture1points, text1, path=object_matching_name)
+        make_matching_figure(img0_raw, img1_raw, picture0points, picture1points, color1, picture0points, picture1points, text1, path=os.path.join(OUTPUT_DIR, object_matching_name))
         
         image_source1, image1 = load_image_fsu(IMG1_PTH, RESIZE_WIDTH, RESIZE_HEIGHT)
         h, w, _ = image_source1.shape
@@ -284,10 +286,13 @@ for i, box in enumerate(boxes_xyxy):
         )
 
             
-        #show_masks(pil_image1, masks1, scores1,randomColor=True)
+        show_masks(pil_image1, masks1, scores1,randomColor=True)
+        image1_maskname = f'{LOFTR_MATCHING_NAME}_{os.path.basename(IMG1_PTH).split(".")[0]}_{phrases[i]}_{i}.jpg'
+        plt.savefig(os.path.join(OUTPUT_DIR, image1_maskname), dpi=300, bbox_inches='tight')
 
-    except Exception:
+    except Exception as e:
         print(f"there might not be any matches for {phrases[i]}")
+        print(f"Exception is {e}")
         
     
 
