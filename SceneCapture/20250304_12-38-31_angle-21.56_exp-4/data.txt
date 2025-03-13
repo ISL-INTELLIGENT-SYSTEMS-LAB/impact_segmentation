@@ -1,0 +1,17 @@
+Angle Difference: 21.56
+Photo1 Centroid: (419, 235)
+Photo2 Centroid: (189, 235)
+Photo1 Dimensions: 640x480
+Photo2 Dimensions: 640x480
+Photo1 Subject Area: 7505.50
+Photo2 Subject Area: 7705.50
+Photo1 Bounding Box: (370, 187, 100, 98)
+Photo2 Bounding Box: (139, 187, 102, 99)
+Photo1 Perimeter: 324.63
+Photo2 Perimeter: 330.63
+Photo1 Aspect Ratio: 1.02
+Photo2 Aspect Ratio: 1.03
+Photo1 Average Brightness: 70.22
+Photo2 Average Brightness: 69.86
+Photo1 Average Color: (54.60374067254579, 67.28287624769843, 126.23296831088284)
+Photo2 Average Color: (52.055819251946076, 68.09711410670211, 125.69185494588949)
