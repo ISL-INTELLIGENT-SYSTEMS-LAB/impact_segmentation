@@ -6,7 +6,7 @@
 Download the model file (**2.4GB**):  
 **[SAM Model - sam_vit_h_4b8939.pth](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth)**
 
-Place the downloaded file into the `EXPERIMENTS_SCENECAPTURE` folder.
+Place the downloaded file into the same folder as your `sceneCapture.py` script.
 
 ---
 
