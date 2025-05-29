@@ -53,9 +53,10 @@ class CoordinatePlacer:
         self.lines_data = []      # Will store computed distances/angles for drawing lines
         self.captured_images = [] # Stores frames captured from the webcam
         self.object_names = []    # Match object_coords one-to-one
+        self.ghost_artists = []  # Keep track of temporary preview artists
 
         # Default FOV before calibration
-        self.camera_fov = 90  # degrees
+        self.camera_fov = 45  # degrees
 
         # Initialize webcam capture using OpenCV
         self.cap = cv2.VideoCapture(0)
@@ -69,6 +70,10 @@ class CoordinatePlacer:
 
         # Continuously update the webcam feed in the GUI
         self.update_webcam()
+        
+        # Available ttkbootstrap themes and current index
+        self.themes = self.master.style.theme_names()
+        self.current_theme_index = self.themes.index(self.master.style.theme.name)
         
         
     def create_widgets(self):
@@ -92,7 +97,7 @@ class CoordinatePlacer:
         control_frame.pack(side=tk.TOP, fill=tk.X, pady=10)
 
         # Label for "Mode" and two radio buttons (Object/Camera)
-        ttk.Label(control_frame, text="Mode:").pack(side=tk.LEFT, padx=5)
+        ttk.Label(control_frame, text="Mode:", font=("Segoe UI", 16, "bold")).pack(side=tk.LEFT, padx=5)
         ttk.Radiobutton(control_frame, text="Object", variable=self.mode, value="object").pack(side=tk.LEFT)
         ttk.Radiobutton(control_frame, text="Camera", variable=self.mode, value="camera").pack(side=tk.LEFT)
 
@@ -103,15 +108,23 @@ class CoordinatePlacer:
         ttk.Label(control_frame, text="° Rotation").pack(side=tk.LEFT)
 
         # Themed action buttons with bootstyle
-        ttk.Button(control_frame, text="Compute", command=self.compute_distances_and_angles, bootstyle="info").pack(side=tk.LEFT, padx=5, ipadx=10, ipady=5)
-        self.capture_button = ttk.Button(control_frame, text="Capture", command=self.capture_image, bootstyle="success")
+        self.capture_button = ttk.Button(control_frame, text="Capture", command=self.capture_image, state=tk.DISABLED, bootstyle="success")
         self.capture_button.pack(side=tk.LEFT, padx=5, ipadx=10, ipady=5)
+
+        self.redo_button = ttk.Button(control_frame, text="Redo Last", command=self.redo_last_capture, bootstyle="secondary")
+        self.redo_button.pack(side=tk.LEFT, padx=5, ipadx=10, ipady=5)
+
         self.export_button = ttk.Button(control_frame, text="Export", command=self.export_data, state=tk.DISABLED, bootstyle="warning")
         self.export_button.pack(side=tk.LEFT, padx=5, ipadx=10, ipady=5)
+
         self.import_button = ttk.Button(control_frame, text="Import", command=self.import_experiment, bootstyle="primary")
         self.import_button.pack(side=tk.LEFT, padx=5, ipadx=10, ipady=5)
-        ttk.Button(control_frame, text="Clear", command=self.clear_all, bootstyle="danger").pack(side=tk.LEFT, padx=5, ipadx=10, ipady=5)
-        ttk.Button(control_frame, text="Reset Capture", command=self.reset_capture, bootstyle="danger").pack(side=tk.LEFT, padx=5, ipadx=10, ipady=5)
+
+        clear_button = ttk.Button(control_frame, text="Clear", command=self.clear_all, bootstyle="danger")
+        clear_button.pack(side=tk.LEFT, padx=5, ipadx=10, ipady=5)
+
+        reset_button = ttk.Button(control_frame, text="Reset Capture", command=self.reset_capture, bootstyle="danger")
+        reset_button.pack(side=tk.LEFT, padx=5, ipadx=10, ipady=5)
 
         # Frame for indicator lights and webcam feed
         indicator_and_webcam = ttk.Frame(right_frame)
@@ -120,9 +133,16 @@ class CoordinatePlacer:
         # Label above webcam and row for indicators to the right
         top_indicator_row = ttk.Frame(indicator_and_webcam)
         top_indicator_row.pack(fill=tk.X)
+        
+        # Next shot information row
+        next_shot_row = ttk.Frame(indicator_and_webcam)
+        next_shot_row.pack(fill=tk.X, pady=(0, 10))
+        # Label for next shot information
+        self.next_shot_label = ttk.Label(next_shot_row, text="Next Shot: Place a camera on the plot to see its position and angle.", font=("Segoe UI", 16, "bold"))
+        self.next_shot_label.pack(side=tk.LEFT, padx=(10, 5), pady=5)
 
         # "Shot Progress" label
-        self.shot_label = ttk.Label(top_indicator_row, text="Shot Progress")
+        self.shot_label = ttk.Label(top_indicator_row, text="Shot Progress", font=("Segoe UI", 16, "bold"))
         self.shot_label.grid(row=0, column=0, padx=(10, 5), sticky="w")
         self.shot_label.grid_remove()
 
@@ -158,6 +178,22 @@ class CoordinatePlacer:
         self.canvas_webcam.config(width=640, height=480)
         self.canvas_webcam.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, pady=(10, 0))
 
+        # Spacer to push theme button to bottom
+        spacer = ttk.Frame(right_frame)
+        spacer.pack(expand=True, fill=tk.BOTH)
+
+        # Bottom toolbar for theme toggle button
+        bottom_toolbar = ttk.Frame(right_frame)
+        bottom_toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        toggle_theme_btn = ttk.Button(
+            bottom_toolbar,
+            text="Switch Themes",
+            command=self.toggle_theme,
+            bootstyle="secondary-outline"
+        )
+        toggle_theme_btn.pack(pady=5, padx=10)
+
 
     def create_plot(self):
         """
@@ -191,6 +227,90 @@ class CoordinatePlacer:
 
         # Capture click events on the plot
         self.canvas.mpl_connect('button_press_event', self.onclick)
+        
+        # Capture hover events to show object/camera info
+        self.canvas.mpl_connect("motion_notify_event", self.on_hover)
+        
+    
+    def on_hover(self, event):
+        """
+        Handles mouse movement to show ghost object or camera with FOV lines.
+        If the cursor leaves the plot area or is invalid, the ghost disappears.
+        """
+        # If the cursor is outside the plot axes, remove ghost
+        if not event.inaxes or event.xdata is None or event.ydata is None:
+            self.clear_ghosts()
+            self.canvas.draw_idle()
+            return
+
+        x, z = round(event.xdata), round(event.ydata)
+
+        # Only allow within bounds
+        if x < -10 or x > 10 or z < -10 or z > 10:
+            self.clear_ghosts()
+            self.canvas.draw_idle()
+            return
+
+        # Clear previous preview
+        self.clear_ghosts()
+
+        mode = self.mode.get()
+
+        if mode == "object":
+            ghost = self.ax.plot(
+                x, z,
+                marker='o',
+                markersize=10,
+                markerfacecolor='deepskyblue',
+                markeredgecolor='black',
+                alpha=0.6,
+                linestyle='None',
+                zorder=10
+            )
+            self.ghost_artists.extend(ghost)
+
+        elif mode == "camera":
+            try:
+                angle = float(self.angle_entry.get())
+            except ValueError:
+                angle = 0
+
+            ghost = self.ax.plot(
+                x, z,
+                marker='^',
+                markersize=10,
+                markerfacecolor='lightgreen',
+                markeredgecolor='black',
+                alpha=0.6,
+                linestyle='None',
+                zorder=10
+            )
+            self.ghost_artists.extend(ghost)
+
+            direction = math.radians(angle)
+            spread = math.radians(self.camera_fov / 2)
+            for offset in [-spread, spread]:
+                dx = math.sin(direction + offset) * 3
+                dz = math.cos(direction + offset) * 3
+                line = self.ax.plot(
+                    [x, x + dx], [z, z + dz],
+                    color='green',
+                    linewidth=1.5,
+                    linestyle='--',
+                    alpha=0.6,
+                    zorder=9
+                )
+                self.ghost_artists.extend(line)
+
+        self.canvas.draw_idle()
+        
+        
+    def clear_ghosts(self):
+        try:
+            for artist in self.ghost_artists:
+                artist.remove()
+        finally:
+            self.ghost_artists.clear()
 
 
     def update_webcam(self):
@@ -227,6 +347,8 @@ class CoordinatePlacer:
         if len(self.captured_images) >= len(self.camera_coords):
             self.capture_button.config(state=tk.DISABLED)
             self.export_button.config(state=tk.NORMAL)
+            
+        self.update_next_shot_label()
           
             
     def reset_capture(self):
@@ -237,10 +359,45 @@ class CoordinatePlacer:
         self.captured_images.clear()
         for c in self.indicators:
             c.itemconfig("light", fill="white")
+            
+        if len(self.camera_coords) == 0:
+            self.shot_label.grid_remove()
+            self.capture_button.config(state=tk.DISABLED)
+            self.export_button.config(state=tk.DISABLED)
+            return
+        else:
+            self.shot_label.grid()
+            self.update_next_shot_label()
+            self.capture_button.config(state=tk.NORMAL)
+            self.export_button.config(state=tk.DISABLED)
+        
+        
+    def redo_last_capture(self):
+        """
+        Removes the most recent captured image and resets the indicator light.
+        Re-enables the capture button if needed.
+        """
+        if not self.captured_images:
+            messagebox.showinfo("Nothing to redo", "No shots have been taken yet.")
+            return
+
+        # Remove last image
+        self.captured_images.pop()
+
+        # Reset the last indicator to white
+        last_idx = len(self.captured_images)
+        if last_idx < len(self.indicators):
+            self.indicators[last_idx].itemconfig("light", fill="white")
+
+        # Re-enable capture
         self.capture_button.config(state=tk.NORMAL)
+
+        # Disable export until all images are captured again
         self.export_button.config(state=tk.DISABLED)
         
-    
+        self.update_next_shot_label()
+            
+        
     def skip_calibration_early(self):
         """
         User can click this to bypass the calibration step.
@@ -291,6 +448,7 @@ class CoordinatePlacer:
             self.camera_coords.append((x, z))
             self.camera_angles.append(angle)
             self.update_indicators()
+            
 
         self.redraw_plot()
 
@@ -300,31 +458,52 @@ class CoordinatePlacer:
         Rebuilds the list of circle indicators on the right side to reflect how many cameras are placed.
         Each indicator corresponds to a camera and changes color once an image is captured.
         """
-        # Remove existing indicators from the UI
         for c in self.indicators:
             c.destroy()
         self.indicators.clear()
 
-        # If there are no cameras, hide “Shot Progress” and disable capture/export
         if len(self.camera_coords) > 0:
-            self.shot_label.grid()  # Show label
+            self.shot_label.grid()
             self.capture_button.config(state=tk.NORMAL)
             self.export_button.config(state=tk.DISABLED)
         else:
-            self.shot_label.grid_remove()  # Hide label
+            self.shot_label.grid_remove()
             self.capture_button.config(state=tk.DISABLED)
             self.export_button.config(state=tk.DISABLED)
+            self.update_next_shot_label()
+            return
 
-        # Create a circular "light" for each camera, defaulting to white
         for i in range(len(self.camera_coords)):
             c = tk.Canvas(self.indicator_frame, width=20, height=20)
-            c.create_oval(2, 2, 18, 18, fill="white", outline="black", tags="light")
-            
-            row = i // 19       # Integer division to determine the row
-            col = i % 19        # Modulus to determine the column in that row
-            
+            color = "green" if i < len(self.captured_images) else "white"
+            c.create_oval(2, 2, 18, 18, fill=color, outline="black", tags="light")
+            row = i // 19
+            col = i % 19
             c.grid(row=row, column=col, padx=2, pady=2)
             self.indicators.append(c)
+
+        self.update_next_shot_label()
+            
+    
+    def update_next_shot_label(self):
+        """
+        Updates the label with information about the next camera shot.
+        """
+        captured = len(self.captured_images)
+        if captured < len(self.camera_coords):
+            x, z = self.camera_coords[captured]
+            angle = self.camera_angles[captured]
+            self.next_shot_label.config(
+                text=f"Next Shot: Camera at ({x}, {z}) with {angle}° rotation."
+            )
+        elif self.camera_coords:
+            self.next_shot_label.config(
+                text="All shots captured. You may now export your data."
+            )
+        else:
+            self.next_shot_label.config(
+                text="Next Shot: Place a camera on the plot to see its position and angle."
+            )
 
 
     def clear_all(self):
@@ -355,6 +534,8 @@ class CoordinatePlacer:
 
         # Redraw the empty plot
         self.redraw_plot()
+        
+        self.update_next_shot_label()
 
 
     def redraw_plot(self):
@@ -362,7 +543,8 @@ class CoordinatePlacer:
         Clears the plot and redraws all objects, cameras, camera FOV lines, and any 
         connection lines from the lines_data.
         """
-        # Clear and redraw the entire placement plot
+        self.ghost_artists.clear()  # Clear any ghost artifacts
+
         self.ax.clear()
         self.ax.set_title("Click to place OBJECTS or CAMERAS (Z+ is North)")
         self.ax.set_xlabel("X-axis")
@@ -375,14 +557,14 @@ class CoordinatePlacer:
         self.ax.set_ylim(-10, 10)
         self.ax.set_xticks(range(-10, 11, 1))
         self.ax.set_yticks(range(-10, 11, 1))
-        self.ax.plot(0, 0, 'ro')  # Red origin marker
+        self.ax.plot(0, 0, 'ro')  # Origin marker
 
-        # Draw all objects as blue dots and label with names
+        # Redraw all placed objects
         for idx, (x, z) in enumerate(self.object_coords):
             self.ax.plot(x, z, 'bo')
             self.ax.text(x + 0.3, z + 0.3, self.object_names[idx], color='blue')
 
-        # Draw all cameras and their FOV
+        # Redraw all placed cameras + FOV
         fov_half = self.camera_fov / 2
         for idx, ((x, z), angle) in enumerate(zip(self.camera_coords, self.camera_angles)):
             self.ax.plot(x, z, marker='^', color='green')
@@ -396,18 +578,7 @@ class CoordinatePlacer:
             self.ax.plot([x, x1], [z, z1], 'green', linestyle=':')
             self.ax.plot([x, x2], [z, z2], 'green', linestyle=':')
 
-        # Draw lines and angle labels for visible object connections
-        for cam in self.lines_data:
-            for key, val in cam.items():
-                cx, cz = val['xpos'], val['zpos']
-                for obj_key, obj in val['objects'].items():
-                    ox, oz = obj['xpos'], obj['zpos']
-                    self.ax.plot([cx, ox], [cz, oz], 'gray', linestyle='--', linewidth=0.7)
-                    mx, mz = (cx + ox) / 2, (cz + oz) / 2
-                    angle = math.degrees(math.atan2(ox - cx, oz - cz))
-                    self.ax.text(mx, mz, f"{angle:.1f}°", fontsize=8, color='black')
-
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
 
     def compute_distances_and_angles(self):
@@ -486,9 +657,8 @@ class CoordinatePlacer:
         - Exports the final scene plot as scene_plot.png
         - Launches the segmentation tool using the preloaded SAM model
         """
-        if not self.lines_data:
-            messagebox.showinfo("No Data", "Please compute distances and angles before exporting.")
-            return
+        # Compute distances and angles before exporting
+        self.compute_distances_and_angles()
 
         # Ask for folder location
         folder = filedialog.askdirectory()
@@ -547,7 +717,10 @@ class CoordinatePlacer:
 
         # Save images
         for idx, img in enumerate(self.captured_images):
-            img_path = os.path.join(export_path, f"camera_{idx+1}.png")
+            x, z = self.camera_coords[idx]
+            degree = self.camera_angles[idx]
+            filename = f"Camera_{x}_{z}_{int(degree)}.png"
+            img_path = os.path.join(export_path, filename)
             cv2.imwrite(img_path, img)
 
         # Save the scene plot
@@ -568,6 +741,12 @@ class CoordinatePlacer:
         self.cap.release()
         self.master.destroy()
         exit()
+        
+        
+    def toggle_theme(self):
+        self.current_theme_index = (self.current_theme_index + 1) % len(self.themes)
+        next_theme = self.themes[self.current_theme_index]
+        self.master.style.theme_use(next_theme)
              
                 
     def import_experiment(self):
@@ -720,8 +899,8 @@ class CoordinatePlacer:
         self.skip_button.pack_forget()
 
         if self.skip_calibration or len(fov_results) < 1:
-            messagebox.showwarning("Calibration Skipped", "Using default FOV of 90°.")
-            self.camera_fov = 90
+            messagebox.showwarning("Calibration Skipped", "Using default FOV of 54°.")
+            self.camera_fov = 54
         else:
             avg_fov = round(sum(fov_results) / len(fov_results), 2)
             self.camera_fov = avg_fov
@@ -733,7 +912,7 @@ class CoordinatePlacer:
 
 
 if __name__ == "__main__":
-    root = ttk.Window(themename="superhero")
+    root = ttk.Window(themename="darkly")
     app = CoordinatePlacer(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
