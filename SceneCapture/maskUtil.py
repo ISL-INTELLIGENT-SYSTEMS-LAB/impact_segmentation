@@ -44,8 +44,8 @@ class SegmentationApp:
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Left frame for map/plot
-        self.left_frame = ttk.Frame(main_frame, width=800)
-        self.left_frame.pack(side=tk.LEFT, fill=tk.Y, expand=True)
+        self.left_frame = ttk.Frame(main_frame, width=700)
+        self.left_frame.pack(side=tk.LEFT, fill=tk.Y, expand=False)
 
         # Right frame for segmentation tools
         self.right_frame = ttk.Frame(main_frame, width=400)
@@ -82,9 +82,7 @@ class SegmentationApp:
         btn_frame = ttk.Frame(self.right_inner)
         btn_frame.pack(pady=(0, 20))
 
-        # Enlarged buttons with more spacing
-        btn_font = ("Segoe UI", 11, "bold")
-
+        # Create buttons for segmentation actions
         self.toggle_button = ttk.Button(btn_frame, text="Next Mask", command=self.toggle_mask, bootstyle="primary", width=12)
         self.toggle_button.pack(side=tk.LEFT, padx=10, pady=5)
 
@@ -109,6 +107,10 @@ class SegmentationApp:
         self.root.mainloop()
 
     def load_object_names(self):
+        """
+        Load object names from data.json in the export path.
+        Returns a list of object names.
+        """
         # Read object names from data.json
         json_path = os.path.join(self.export_path, "data.json")
         if os.path.exists(json_path):
@@ -118,12 +120,18 @@ class SegmentationApp:
         return []
 
     def setup_plot(self):
+        """
+        Setup the matplotlib plot for displaying object and camera positions.
+        """
         # Create a matplotlib figure and add it to the left frame
-        self.fig, self.ax = plt.subplots(figsize=(12, 14), dpi=100)
+        self.fig, self.ax = plt.subplots(figsize=(10, 12), dpi=100)
         self.canvas_plot = FigureCanvasTkAgg(self.fig, master=self.left_frame)
         self.canvas_plot.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def plot_scene(self):
+        """
+        Plot the current scene with object locations and camera orientation.
+        """
         # Plot all object locations and the camera with orientation arrow
         self.ax.clear()
         self.ax.set_title("Object and Camera Positions", fontsize=12)
@@ -165,10 +173,14 @@ class SegmentationApp:
             except Exception as e:
                 print(f"Error parsing camera filename: {e}")
 
+        # Set aspect ratio and redraw
         self.ax.set_aspect('equal')
         self.canvas_plot.draw()
 
     def load_image(self):
+        """
+        Load the next image from the list and prepare it for segmentation.
+        """
         # Stop if no images remain
         if self.current_idx >= len(self.image_paths):
             messagebox.showinfo("Done", "All images processed.")
@@ -190,9 +202,13 @@ class SegmentationApp:
         self.plot_scene()
         
     def on_image_click(self, event):
+        """
+        Handle mouse click events on the image canvas to segment objects.
+        """
         if self.tk_img is None:
             return
 
+        # Get click coordinates in the resized canvas (800x600)
         x_disp, y_disp = event.x, event.y
         h_orig, w_orig, _ = self.image_rgb.shape
 
@@ -200,9 +216,11 @@ class SegmentationApp:
         x = int(x_disp * (w_orig / 800))
         y = int(y_disp * (h_orig / 600))
 
+        # Check if click is within image bounds
         if x >= w_orig or y >= h_orig or x < 0 or y < 0:
             return
 
+        # Store last click coordinates
         self.last_click_coords = (x, y)
 
         # Predict masks
@@ -212,12 +230,16 @@ class SegmentationApp:
             multimask_output=True
         )
 
+        # Store masks and update display
         self.current_masks = [m.astype(np.uint8) for m in masks]
         self.selected_mask_idx = 0
         self.display_image(mask=masks[0])
         self.save_button.config(state=tk.NORMAL)
 
     def display_image(self, mask=None):
+        """
+        Display the image with an optional mask overlay.
+        """
         display = self.image_rgb.copy()
         if mask is not None:
             color = np.array([255, 0, 0])
@@ -227,11 +249,15 @@ class SegmentationApp:
         img = Image.fromarray(display)
         img = img.resize((800, 600), Image.Resampling.LANCZOS)  # High-quality resize
 
+        # Convert to PhotoImage for Tkinter
         self.tk_img = ImageTk.PhotoImage(img)
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
 
     def toggle_mask(self):
+        """
+        Toggle to the next available mask and display it.
+        """
         # Show next available mask
         if not self.current_masks:
             return
@@ -239,11 +265,17 @@ class SegmentationApp:
         self.display_image(mask=self.current_masks[self.selected_mask_idx])
 
     def toggle_all_masks(self):
+        """
+        Toggle display of all saved masks on the image.
+        """
         # Display all saved masks
         if hasattr(self, 'composite_mask') and self.composite_mask is not None:
             self.display_image(mask=self.composite_mask)
 
     def update_progress_display(self):
+        """
+        Update the progress bar and filename label based on the current image index.
+        """
         # Update progress bar and filename label
         filename = os.path.basename(self.image_paths[self.current_idx])
         try:
@@ -253,6 +285,7 @@ class SegmentationApp:
         except:
             self.filename_label.config(text=f"Object Segmentation - {filename}")
 
+        # Update progress bar
         total = len(self.image_paths)
         current = self.current_idx + 1
         self.progress['maximum'] = total
@@ -260,31 +293,43 @@ class SegmentationApp:
         self.progress_text.config(text=f"({current} / {total})")
 
     def save_mask(self):
+        """
+        Save the current mask with the selected label and update the composite mask.
+        """
         # Save the selected mask under the chosen label
         if self.current_masks is None or len(self.current_masks) == 0 or self.last_click_coords is None:
             return
 
+        # Get base name and camera ID from the image path
         base_name = os.path.splitext(os.path.basename(self.image_paths[self.current_idx]))[0]
         cam_id = base_name.replace("camera_", "Camera")
         mask = self.current_masks[self.selected_mask_idx]
 
+        # Prompt user to select object name
         selected_name = self.prompt_object_name()
         if not selected_name:
             return
 
+        # Ensure the mask is initialized
         if not hasattr(self, 'composite_mask') or self.composite_mask is None:
             h, w = mask.shape
             self.composite_mask = np.zeros((h, w), dtype=np.uint8)
 
+        # Update the composite mask with the selected gray value
         gray_value = self.global_gray_map.get(selected_name, 255)
         self.composite_mask[mask > 0] = gray_value
         self.mask_data.setdefault(cam_id, {})[selected_name] = gray_value
 
+        # Update the status label and disable save button
         self.status.config(text=f"Marked {selected_name}")
         self.save_button.config(state=tk.DISABLED)
         self.next_image_button.config(state=tk.NORMAL)
 
     def prompt_object_name(self):
+        """
+        Prompt the user to select an object name from a combo box.
+        Returns the selected object name.
+        """
         # Popup combo box to choose object name
         name_win = ttk.Toplevel(self.root)
         name_win.title("Select Object")
@@ -294,6 +339,7 @@ class SegmentationApp:
         y = (name_win.winfo_screenheight() // 2) - (height // 2)
         name_win.geometry(f"+{x}+{y}")
 
+        # Label and combobox for object selection
         ttk.Label(name_win, text="Assign mask to object:", bootstyle="light").pack(padx=10, pady=5)
 
         # Sort object names alphabetically (with coords)
@@ -302,28 +348,36 @@ class SegmentationApp:
             f"{name}    ({coord[0]}, {coord[1]})" for name, coord in name_coord_pairs
         ]
 
+        # Create combobox with object names
         combo = ttk.Combobox(name_win, values=self.labeled_object_names, state="readonly", width=30,
                             font=("Segoe UI", 10, "bold"))
         combo.pack(padx=10, pady=5)
         combo.current(0)
 
+        # Store selected name in a dictionary to access later
         selected = {'name': None}
 
+        # Confirm button to finalize selection
         def confirm():
             selected_label = combo.get()
             selected['name'] = selected_label.split(" (")[0].strip()
             name_win.destroy()
 
+        # Bind the confirm function to the combobox selection
         ttk.Button(name_win, text="OK", command=confirm, bootstyle="success").pack(pady=5)
         self.root.wait_window(name_win)
         return selected['name']
 
     def next_image(self):
+        """
+        Save the current composite mask and load the next image.
+        """
         # Save current composite mask and load next image
         base_name = os.path.splitext(os.path.basename(self.image_paths[self.current_idx]))[0]
         mask_path = os.path.join(self.export_path, f"{base_name}.jpg")
         cam_id = base_name.replace("camera_", "Camera")
 
+        # If no composite mask exists, create a blank one
         if not hasattr(self, 'composite_mask') or self.composite_mask is None:
             h, w, _ = self.image.shape
             self.composite_mask = np.zeros((h, w), dtype=np.uint8)
@@ -332,17 +386,22 @@ class SegmentationApp:
                 self.mask_data.setdefault(cam_id, {})[name] = gray_value
             print(f"Generated blank mask for {cam_id}")
 
+        # Save the composite mask to file
         cv2.imwrite(mask_path, self.composite_mask)
         self.current_idx += 1
         self.composite_mask = None
         self.save_button.config(state=tk.DISABLED)
 
+        # Update progress and load the next image
         if self.current_idx < len(self.image_paths):
             self.load_image()
         else:
             self.save_and_exit()
 
     def save_and_exit(self):
+        """
+        Save all mask data to the JSON file and exit the application.
+        """
         # Save all updated JSON data to file
         json_path = os.path.join(self.export_path, "data.json")
         if os.path.exists(json_path):
@@ -351,19 +410,22 @@ class SegmentationApp:
         else:
             data = {}
 
+        # Update the Cameras section with mask data
         for cam_id, mask_dict in self.mask_data.items():
             if cam_id not in data.get("Cameras", {}):
                 continue
             data["Cameras"][cam_id]["masks"] = mask_dict
 
+        # Ensure Objects section exists
         data["mask_legend"] = self.global_gray_map
 
+        # Save the updated data back to JSON
         with open(json_path, 'w') as f:
             json.dump(data, f, indent=2)
 
+        # Close the application
         self.root.destroy()
         messagebox.showinfo("Done", "All images processed and saved.")
-
 
 
 if __name__ == "__main__":
@@ -374,6 +436,7 @@ if __name__ == "__main__":
     import torch
     from segment_anything import sam_model_registry, SamPredictor
 
+    # Function to load the SAM predictor model
     def load_sam_predictor():
         checkpoint_path = "sam_vit_h_4b8939.pth"
         model_type = "vit_h"
@@ -382,7 +445,11 @@ if __name__ == "__main__":
         sam_model.to(device)
         return SamPredictor(sam_model)
 
+    # Function to get object names and coordinates from data.json
     def get_object_data(export_path):
+        """
+        Load object names and coordinates from data.json in the specified export path.
+        """
         json_path = os.path.join(export_path, "data.json")
         if not os.path.exists(json_path):
             return [], []
@@ -393,16 +460,20 @@ if __name__ == "__main__":
         coords = [(v["xpos"], v["zpos"]) for v in object_dict.values()]
         return names, coords
 
+    # Main entry point for the application
     root = tk.Tk()
     root.withdraw()
 
+    # Prompt user to select the experiment folder
     export_path = filedialog.askdirectory(title="Select Experiment Folder")
     if not export_path:
         messagebox.showwarning("Cancelled", "No folder selected.")
     else:
+        # Check if data.json exists in the selected folder
         json_path = os.path.join(export_path, "data.json")
         if not os.path.exists(json_path):
             messagebox.showerror("Missing Data", "data.json not found in selected folder.")
+        # Check if the SAM model checkpoint exists
         else:
             names, coords = get_object_data(export_path)
             predictor = load_sam_predictor()

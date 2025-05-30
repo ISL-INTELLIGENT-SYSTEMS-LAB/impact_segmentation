@@ -38,6 +38,7 @@ class CoordinatePlacer:
         self.master = master
         self.master.title("Object & Camera Placement")
         
+        # Set the window to full screen
         try:
             self.master.state("zoomed")  # Windows
         except:
@@ -56,17 +57,17 @@ class CoordinatePlacer:
         self.ghost_artists = []  # Keep track of temporary preview artists
 
         # Default FOV before calibration
-        self.camera_fov = 45  # degrees
+        self.camera_fov = 54  # degrees
 
         # Initialize webcam capture using OpenCV
-        self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.VideoCapture(0)  # Use the default camera (0)
 
         # Set up the GUI: create widgets and plot area
         self.create_widgets()
         self.create_plot()
 
         # Run camera calibration after GUI is ready (so progress bar exists)
-        threading.Thread(target=self.calibrate_camera_and_set_fov, daemon=True).start()
+        self.master.after(100, lambda: threading.Thread(target=self.calibrate_camera_and_set_fov, daemon=True).start())
 
         # Continuously update the webcam feed in the GUI
         self.update_webcam()
@@ -254,8 +255,10 @@ class CoordinatePlacer:
         # Clear previous preview
         self.clear_ghosts()
 
+        # Determine the current mode (object or camera)
         mode = self.mode.get()
 
+        # Create a ghost object or camera based on the current mode
         if mode == "object":
             ghost = self.ax.plot(
                 x, z,
@@ -269,12 +272,14 @@ class CoordinatePlacer:
             )
             self.ghost_artists.extend(ghost)
 
+        # Draw lines to all cameras
         elif mode == "camera":
             try:
                 angle = float(self.angle_entry.get())
             except ValueError:
                 angle = 0
 
+            # Draw the ghost camera with its FOV lines
             ghost = self.ax.plot(
                 x, z,
                 marker='^',
@@ -287,6 +292,7 @@ class CoordinatePlacer:
             )
             self.ghost_artists.extend(ghost)
 
+            # Draw the FOV lines
             direction = math.radians(angle)
             spread = math.radians(self.camera_fov / 2)
             for offset in [-spread, spread]:
@@ -302,10 +308,14 @@ class CoordinatePlacer:
                 )
                 self.ghost_artists.extend(line)
 
+        # If we have a ghost artist, redraw the canvas
         self.canvas.draw_idle()
         
         
     def clear_ghosts(self):
+        """
+        Removes any ghost artists (temporary preview objects or cameras)
+        """
         try:
             for artist in self.ghost_artists:
                 artist.remove()
@@ -348,6 +358,7 @@ class CoordinatePlacer:
             self.capture_button.config(state=tk.DISABLED)
             self.export_button.config(state=tk.NORMAL)
             
+        # Update the next shot label to reflect the current state
         self.update_next_shot_label()
           
             
@@ -360,11 +371,13 @@ class CoordinatePlacer:
         for c in self.indicators:
             c.itemconfig("light", fill="white")
             
+        # Reset the next shot label
         if len(self.camera_coords) == 0:
             self.shot_label.grid_remove()
             self.capture_button.config(state=tk.DISABLED)
             self.export_button.config(state=tk.DISABLED)
             return
+        # If there are cameras, show the shot label and re-enable capture
         else:
             self.shot_label.grid()
             self.update_next_shot_label()
@@ -395,6 +408,7 @@ class CoordinatePlacer:
         # Disable export until all images are captured again
         self.export_button.config(state=tk.DISABLED)
         
+        # If there are cameras, update the next shot label
         self.update_next_shot_label()
             
         
@@ -443,13 +457,14 @@ class CoordinatePlacer:
             self.object_coords.append((x, z))
             self.object_names.append(name)
 
+        # If in camera mode, add camera with angle
         elif self.mode.get() == "camera":
             angle = float(self.angle_entry.get())
             self.camera_coords.append((x, z))
             self.camera_angles.append(angle)
             self.update_indicators()
             
-
+        # Redraw the plot to show the new object or camera
         self.redraw_plot()
 
 
@@ -462,10 +477,12 @@ class CoordinatePlacer:
             c.destroy()
         self.indicators.clear()
 
+        # If there are cameras, show the shot label and enable capture/export buttons
         if len(self.camera_coords) > 0:
             self.shot_label.grid()
             self.capture_button.config(state=tk.NORMAL)
             self.export_button.config(state=tk.DISABLED)
+        # If no cameras are placed, hide the shot label and disable buttons
         else:
             self.shot_label.grid_remove()
             self.capture_button.config(state=tk.DISABLED)
@@ -473,6 +490,7 @@ class CoordinatePlacer:
             self.update_next_shot_label()
             return
 
+        # Create indicators for each camera
         for i in range(len(self.camera_coords)):
             c = tk.Canvas(self.indicator_frame, width=20, height=20)
             color = "green" if i < len(self.captured_images) else "white"
@@ -482,6 +500,7 @@ class CoordinatePlacer:
             c.grid(row=row, column=col, padx=2, pady=2)
             self.indicators.append(c)
 
+        # Update the next shot label based on current camera state
         self.update_next_shot_label()
             
     
@@ -490,16 +509,20 @@ class CoordinatePlacer:
         Updates the label with information about the next camera shot.
         """
         captured = len(self.captured_images)
+        
+        # If there are cameras and we haven't captured all of them, show the next shot info
         if captured < len(self.camera_coords):
             x, z = self.camera_coords[captured]
             angle = self.camera_angles[captured]
             self.next_shot_label.config(
                 text=f"Next Shot: Camera at ({x}, {z}) with {angle}° rotation."
             )
+        # If all cameras have been captured, show completion message
         elif self.camera_coords:
             self.next_shot_label.config(
                 text="All shots captured. You may now export your data."
             )
+        # If no cameras are placed, show default message
         else:
             self.next_shot_label.config(
                 text="Next Shot: Place a camera on the plot to see its position and angle."
@@ -511,11 +534,13 @@ class CoordinatePlacer:
         Resets all internal data structures and clears the plot and indicators.
         Disables capture/export until new cameras are placed.
         """
+        # Clear all internal data structures
         self.object_coords.clear()
         self.camera_coords.clear()
         self.camera_angles.clear()
         self.lines_data.clear()
         self.captured_images.clear()
+        self.object_names.clear()
 
         # Remove existing indicator canvases
         for c in self.indicators:
@@ -535,6 +560,7 @@ class CoordinatePlacer:
         # Redraw the empty plot
         self.redraw_plot()
         
+        # Update the next shot label to default state
         self.update_next_shot_label()
 
 
@@ -545,6 +571,7 @@ class CoordinatePlacer:
         """
         self.ghost_artists.clear()  # Clear any ghost artifacts
 
+        # Clear the plot and reset title/labels
         self.ax.clear()
         self.ax.set_title("Click to place OBJECTS or CAMERAS (Z+ is North)")
         self.ax.set_xlabel("X-axis")
@@ -578,6 +605,7 @@ class CoordinatePlacer:
             self.ax.plot([x, x1], [z, z1], 'green', linestyle=':')
             self.ax.plot([x, x2], [z, z2], 'green', linestyle=':')
 
+        # Draw lines to visible objects based on computed distances/angles
         self.canvas.draw_idle()
 
 
@@ -725,7 +753,6 @@ class CoordinatePlacer:
 
         # Save the scene plot
         self.fig.savefig(os.path.join(export_path, "scene_plot.png"))
-
         messagebox.showinfo("Export Successful", f"Data and images exported to:\n{export_path}")
 
         # Launch the segmentation tool
@@ -744,6 +771,10 @@ class CoordinatePlacer:
         
         
     def toggle_theme(self):
+        """
+        Toggles between available ttkbootstrap themes.
+        Cycles through the list of themes and applies the next one.
+        """
         self.current_theme_index = (self.current_theme_index + 1) % len(self.themes)
         next_theme = self.themes[self.current_theme_index]
         self.master.style.theme_use(next_theme)
@@ -758,9 +789,11 @@ class CoordinatePlacer:
             return
 
         try:
+            # Load the JSON data from the selected file
             with open(file_path, 'r') as f:
                 data = json.load(f)
 
+            # Clear all existing data before importing
             self.clear_all()
 
             # Load named objects explicitly
@@ -769,16 +802,18 @@ class CoordinatePlacer:
                 self.object_coords.append((obj["xpos"], obj["zpos"]))
                 self.object_names.append(name)
 
-            # Load cameras
+            # Load cameras and their data
             cameras = data.get("Cameras", {})
-            for key in sorted(cameras):
+            for key in cameras:
                 cam = cameras[key]
                 self.camera_coords.append((cam["xpos"], cam["zpos"]))
                 self.camera_angles.append(cam.get("rotation", 0.0))
 
+            # Update indicators and redraw the plot
             self.update_indicators()
             self.redraw_plot()
 
+            # Update the next shot label
             messagebox.showinfo("Import Successful", f"Loaded experiment from:\n{file_path}")
 
         except Exception as e:
@@ -795,14 +830,16 @@ class CoordinatePlacer:
         total_runs = 3
         self.skip_calibration = False
 
-        messagebox.showinfo(
+        # Initialize webcam capture
+        self.master.after(0, lambda: messagebox.showinfo(
             "Camera Calibration",
             "Camera calibration will run 3 times to improve accuracy.\n\n"
             "Please use a printed 9x6 checkerboard pattern (25mm squares, 10x7 total squares).\n"
             "Move the board to different positions and angles for each frame.\n\n"
             "Click 'Continue without calibration' to skip.\n"
-        )
+        ))
 
+        # Initialize progress bar and label
         self.calibration_progress["maximum"] = max_calibration_images
         self.calibration_progress["value"] = 0
         self.calibration_progress.pack()
@@ -811,51 +848,62 @@ class CoordinatePlacer:
         self.skip_button.pack()
         self.master.update_idletasks()
 
+        # Start webcam capture
         fov_results = []
         for run_index in range(total_runs):
             if self.skip_calibration:
                 break
-
+            
+            # Reset webcam capture for each run
             checkerboard_dims = (8, 6)  # 9x7 squares gives 8x6 inner corners
             square_size = 25.0  # in mm
             criteria = (cv2.TermCriteria_EPS + cv2.TermCriteria_MAX_ITER, 30, 0.001)
 
+            # Open webcam
             objp = np.zeros((np.prod(checkerboard_dims), 3), np.float32)
             objp[:, :2] = np.mgrid[0:checkerboard_dims[0], 0:checkerboard_dims[1]].T.reshape(-1, 2)
             objp *= square_size
 
+            # Initialize lists to hold object points and image points
             objpoints = []
             imgpoints = []
 
+            # Reset the webcam capture
             count = 0
             self.calibration_progress["value"] = 0
             self.calibration_label.config(text=f"Run {run_index + 1} – Captured: 0 out of {max_calibration_images}")
             self.master.update_idletasks()
 
+            # Start webcam feed
             while count < max_calibration_images and not self.skip_calibration:
                 ret, frame = self.cap.read()
                 if not ret:
                     continue
 
+                # Convert frame to grayscale for corner detection
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 ret_corners, corners = cv2.findChessboardCorners(
                     gray, checkerboard_dims,
                     cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
                 )
 
+                # If corners are found, refine them and add to points
                 if ret_corners:
                     objpoints.append(objp)
                     corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
                     imgpoints.append(corners2)
 
+                    # Draw the corners on the frame
                     frame = cv2.drawChessboardCorners(frame, checkerboard_dims, corners2, ret_corners)
 
+                    # Convert frame to RGB for display in Tkinter
                     img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     img_pil = Image.fromarray(img_rgb)
                     img_tk = ImageTk.PhotoImage(image=img_pil)
                     self.canvas_webcam.imgtk = img_tk
                     self.canvas_webcam.configure(image=img_tk)
 
+                    # Update the webcam label with the captured frame
                     self.master.update_idletasks()
 
                     # Pause visually for 500ms
@@ -866,6 +914,7 @@ class CoordinatePlacer:
                         self.master.update()
                         time.sleep(0.01)
 
+                    # Increment count and update progress bar
                     count += 1
                     self.calibration_progress["value"] = count
                     self.calibration_label.config(
@@ -873,6 +922,7 @@ class CoordinatePlacer:
                     )
                     self.master.update_idletasks()
 
+            # If the user skipped calibration, break out of the loop
             if self.skip_calibration:
                 break
 
@@ -880,6 +930,7 @@ class CoordinatePlacer:
             ret, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(
                 objpoints, imgpoints, gray.shape[::-1], None, None)
 
+            # Calculate RMS reprojection error
             fx = camera_matrix[0, 0]
             w = gray.shape[1]
             fov_x = 2 * math.degrees(math.atan(w / (2 * fx)))
@@ -888,27 +939,30 @@ class CoordinatePlacer:
 
             print(f"Run {run_index+1}: RMS Reprojection Error: {ret:.4f} | Estimated Horizontal FOV: {fov_x}°")
 
-            messagebox.showinfo(
+            # Draw the calibration result on the webcam label
+            self.master.after(0, lambda: messagebox.showinfo(
                 f"Calibration Run {run_index + 1} Complete",
                 f"RMS Reprojection Error: {ret:.4f}\nEstimated Horizontal FOV: {fov_x}°"
-            )
+            ))
 
         # Clean up GUI elements
         self.calibration_progress.pack_forget()
         self.calibration_label.pack_forget()
         self.skip_button.pack_forget()
 
+        # Release the webcam
         if self.skip_calibration or len(fov_results) < 1:
-            messagebox.showwarning("Calibration Skipped", "Using default FOV of 54°.")
+            self.master.after(0, lambda: messagebox.showwarning("Calibration Skipped", "Using default FOV of 54°."))
             self.camera_fov = 54
+        # If we have valid FOV results, calculate the average
         else:
             avg_fov = round(sum(fov_results) / len(fov_results), 2)
             self.camera_fov = avg_fov
-            messagebox.showinfo(
+            self.master.after(0, lambda: messagebox.showinfo(
                 "Calibration Complete",
                 f"Completed {len(fov_results)} calibration runs.\n\n"
                 f"Average Horizontal FOV: {avg_fov}°"
-            )
+            ))
 
 
 if __name__ == "__main__":
