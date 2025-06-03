@@ -23,7 +23,8 @@ cap.set(3, 640)  # Set frame width
 cap.set(4, 480)  # Set frame height
 
 # Set the IP and port of the receiving computer
-server_ip = '192.168.1.100'  # <- Replace this with the actual IP of the Windows laptop
+server_ip = input("Please enter the IP address shown on the pop-up window: ")
+
 server_port = 9999
 
 # Create a TCP socket
@@ -31,6 +32,8 @@ client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 # Connect to the server
 client_socket.connect((server_ip, server_port))
+
+print('\n[INFO] Connection made, sending video feed.')
 
 try:
     while True:

@@ -16,6 +16,9 @@ import cv2
 from PIL import Image, ImageTk
 from maskUtil import SegmentationApp
 import torch
+import socket
+import struct
+import pickle
 from segment_anything import sam_model_registry, SamPredictor
 
 # Tell matplotlib to use the TkAgg backend for embedding plots in Tkinter
@@ -37,7 +40,7 @@ class CoordinatePlacer:
         """
         self.master = master
         self.master.title("Object & Camera Placement")
-        
+
         # Set the window to full screen
         try:
             self.master.state("zoomed")  # Windows
@@ -54,34 +57,26 @@ class CoordinatePlacer:
         self.lines_data = []      # Will store computed distances/angles for drawing lines
         self.captured_images = [] # Stores frames captured from the webcam
         self.object_names = []    # Match object_coords one-to-one
-        self.ghost_artists = []  # Keep track of temporary preview artists
+        self.ghost_artists = []   # Keep track of temporary preview artists
 
         # Default FOV before calibration
         self.camera_fov = 54  # degrees
 
-        # Initialize webcam capture using OpenCV
-        self.cap = cv2.VideoCapture(0)  # Use the default camera (0)
+        # Do not initialize webcam yet; will be based on user choice
+        self.cap = None
 
-        # Set up the GUI: create widgets and plot area
+        # Build the entire GUI (widgets + plot) now that the SAM model is already loaded
         self.create_widgets()
         self.create_plot()
 
-        # Run camera calibration after GUI is ready (so progress bar exists)
-        self.master.after(100, lambda: threading.Thread(target=self.calibrate_camera_and_set_fov, daemon=True).start())
-
-        # Continuously update the webcam feed in the GUI
-        self.update_webcam()
-        
-        # Available ttkbootstrap themes and current index
-        self.themes = self.master.style.theme_names()
-        self.current_theme_index = self.themes.index(self.master.style.theme.name)
+        # Now that everything is built and SAM is in memory, ask which camera to use
+        self.ask_camera_mode()
         
         
     def create_widgets(self):
         """
         Builds the main frames and control widgets of the GUI using ttkbootstrap styling.
         """
-        # Main container frame
         main_frame = ttk.Frame(self.master)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -138,7 +133,6 @@ class CoordinatePlacer:
         # Next shot information row
         next_shot_row = ttk.Frame(indicator_and_webcam)
         next_shot_row.pack(fill=tk.X, pady=(0, 10))
-        # Label for next shot information
         self.next_shot_label = ttk.Label(next_shot_row, text="Next Shot: Place a camera on the plot to see its position and angle.", font=("Segoe UI", 16, "bold"))
         self.next_shot_label.pack(side=tk.LEFT, padx=(10, 5), pady=5)
 
@@ -155,13 +149,13 @@ class CoordinatePlacer:
         # Progress bar for calibration (hidden by default)
         self.calibration_progress = ttk.Progressbar(
             indicator_and_webcam, orient="horizontal", length=200, mode="determinate")
-        self.calibration_progress.pack(pady=5)
+        self.calibration_progress.pack()
         self.calibration_progress.pack_forget()
 
         # Text label for calibration progress count (e.g., "Captured: 0 out of 30")
         self.calibration_label = ttk.Label(indicator_and_webcam, text="")
         self.calibration_label.pack()
-        self.calibration_label.pack_forget()  # Hide until calibration begins
+        self.calibration_label.pack_forget()
 
         # Skip calibration button (hidden by default)
         self.skip_calibration = False
@@ -171,8 +165,8 @@ class CoordinatePlacer:
             command=self.skip_calibration_early,
             bootstyle="secondary-outline"
         )
-        self.skip_button.pack(pady=2, ipadx=10, ipady=5)
-        self.skip_button.pack_forget()  # Hide until calibration starts
+        self.skip_button.pack()
+        self.skip_button.pack_forget()
 
         # Label that will show the live webcam feed
         self.canvas_webcam = tk.Label(indicator_and_webcam, bg="black")
@@ -194,6 +188,179 @@ class CoordinatePlacer:
             bootstyle="secondary-outline"
         )
         toggle_theme_btn.pack(pady=5, padx=10)
+
+        # Store available themes
+        self.themes = self.master.style.theme_names()
+        self.current_theme_index = self.themes.index(self.master.style.theme.name)
+
+
+    def ask_camera_mode(self):
+        """
+        Prompt the user to choose between a wired or wireless camera, and initialize accordingly.
+        """
+        choice = tk.messagebox.askquestion(
+            "Select Camera Source",
+            "Do you want to use a wired webcam?\nClick 'No' to search for a wireless camera.",
+            icon='question'
+        )
+
+        if choice == 'yes':
+            self.is_wireless = False
+            # Show confirmation
+            messagebox.showinfo("Wired Camera", "Opening wired webcam...")
+
+            # Start the camera setup in a background thread to prevent UI freezing
+            threading.Thread(target=self.initialize_wired_camera, daemon=True).start()
+        else:
+            # User chose wireless camera
+            self.is_wireless = True
+            self.show_wireless_popup()
+
+
+    def initialize_wired_camera(self):
+        """
+        Initializes the wired camera without blocking the main thread.
+        """
+        # On Windows, specify cv2.CAP_DSHOW for faster attach; on other platforms it falls back gracefully
+        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+        # Read a single warm-up frame (instead of five)
+        self.cap.read()
+        time.sleep(0.05)
+
+        # Check if the camera opened successfully
+        if not self.cap.isOpened():
+            self.master.after(0, lambda: tk.messagebox.showerror("Camera Error", "Could not access the wired webcam."))
+            return
+
+        # Continue GUI-related tasks from the main thread
+        self.master.after(0, self.update_webcam)
+        self.master.after(0, lambda: threading.Thread(target=self.calibrate_camera_and_set_fov, daemon=True).start())
+
+
+    def show_wireless_popup(self):
+        """
+        Display a popup window showing the local IP and waiting for wireless stream.
+
+        This popup will also start a background thread to listen for incoming webcam streams.
+        """
+        popup = tk.Toplevel(self.master)
+        popup.title("Wireless Camera Connection")
+        popup.geometry("400x150")
+        popup.resizable(False, False)
+
+        # Center the popup
+        x = (popup.winfo_screenwidth() // 2) - 200
+        y = (popup.winfo_screenheight() // 2) - 75
+        popup.geometry(f"+{x}+{y}")
+
+        ttk.Label(popup, text="Looking for wireless camera...", font=("Segoe UI", 12, "bold")).pack(pady=10)
+
+        # Display the local IP address
+        ip_address = self.get_local_ip()
+        ttk.Label(popup, text=f"Your IP Address: {ip_address}", font=("Segoe UI", 10)).pack(pady=5)
+        ttk.Label(popup, text="Waiting for stream... Close this window to cancel.", font=("Segoe UI", 9, "italic")).pack(pady=5)
+
+        # Start wireless stream listener in background
+        threading.Thread(target=lambda: self.receive_wireless_stream(popup), daemon=True).start()
+
+
+    def get_local_ip(self):
+        """
+        Returns the current computer's local IP address.
+        If it cannot determine the IP, returns "Unavailable".
+        Uses a UDP socket to find the local IP address without needing an internet connection.
+        """
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                return s.getsockname()[0]
+        except:
+            return "Unavailable"
+
+
+    def receive_wireless_stream(self, popup):
+        """
+        Accepts a single incoming webcam stream over TCP and routes it into the GUI display.
+        """
+        # Use a fixed port and IP for simplicity
+        host_ip = '0.0.0.0'
+        port = 9999
+
+        # Create a TCP socket to listen for incoming connections
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind((host_ip, port))
+        server_socket.listen(1)
+
+        try:
+            # Wait for a connection
+            conn, addr = server_socket.accept()
+            popup.destroy()
+            print(f"[INFO] Connection established with: {addr}")
+
+            # Close the popup window
+            self.wireless_conn = conn
+            self.wireless_data = b''
+            self.wireless_payload_size = struct.calcsize(">L")
+
+            # As soon as connection is up, run calibration in background
+            threading.Thread(target=self.calibrate_camera_and_set_fov, daemon=True).start()
+
+            # Then begin updating the GUI with wireless frames
+            self.update_wireless_webcam()
+
+        # If any error occurs, print it and close the socket
+        except Exception as e:
+            print(f"[ERROR] {e}")
+            server_socket.close()
+            return
+
+
+    def update_wireless_webcam(self):
+        """
+        Receives and displays frames from the wireless webcam in the GUI (like a wired webcam).
+        """
+        try:
+            # Receive enough data for the size header
+            while len(self.wireless_data) < self.wireless_payload_size:
+                packet = self.wireless_conn.recv(4096)
+                if not packet:
+                    raise ConnectionError("Wireless stream closed")
+                self.wireless_data += packet
+
+            # Unpack the size of the next message
+            packed_msg_size = self.wireless_data[:self.wireless_payload_size]
+            self.wireless_data = self.wireless_data[self.wireless_payload_size:]
+            msg_size = struct.unpack(">L", packed_msg_size)[0]
+
+            # Now receive the actual frame data
+            while len(self.wireless_data) < msg_size:
+                self.wireless_data += self.wireless_conn.recv(4096)
+
+            # Unpickle the frame data
+            frame_data = self.wireless_data[:msg_size]
+            self.wireless_data = self.wireless_data[msg_size:]
+            frame = pickle.loads(frame_data)
+
+            # Convert and display in GUI label
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(frame)
+            imgtk = ImageTk.PhotoImage(image=img)
+            self.canvas_webcam.imgtk = imgtk
+            self.canvas_webcam.configure(image=imgtk)
+            
+            # Store the latest frame for potential future use
+            self.latest_wireless_frame = frame.copy()
+
+        # Handle any exceptions that occur during the stream
+        except Exception as e:
+            print(f"[ERROR] Wireless stream stopped: {e}")
+            return
+
+        # Schedule the next update
+        self.after_id = self.master.after(10, self.update_wireless_webcam)
 
 
     def create_plot(self):
@@ -328,6 +495,9 @@ class CoordinatePlacer:
         Grabs frames from the webcam and displays them in the GUI label. 
         This function re-calls itself after 10ms (for a continuous feed).
         """
+        if self.cap is None:
+            return
+
         ret, frame = self.cap.read()
         if ret:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -336,19 +506,27 @@ class CoordinatePlacer:
             self.canvas_webcam.imgtk = imgtk
             self.canvas_webcam.configure(image=imgtk)
 
-        # Save after callback ID so it can be cancelled
         self.after_id = self.master.after(10, self.update_webcam)
 
 
     def capture_image(self):
         """
-        Captures a single frame from the webcam and marks the corresponding indicator 
+        Captures a single frame from the webcam (wired or wireless) and marks the corresponding indicator 
         as 'green' once a photo is taken. If all cameras have corresponding images, 
         the 'Export' button becomes enabled.
         """
-        ret, frame = self.cap.read()
-        # Only capture if the read was successful and we haven't exceeded camera count
-        if ret and len(self.captured_images) < len(self.camera_coords):
+        frame = None
+
+        if self.cap is not None:
+            # Wired webcam: grab current frame
+            ret, frame = self.cap.read()
+            if not ret:
+                return
+        elif hasattr(self, "latest_wireless_frame"):
+            # Wireless webcam: use the most recently received frame
+            frame = self.latest_wireless_frame.copy()
+
+        if frame is not None and len(self.captured_images) < len(self.camera_coords):
             self.captured_images.append(frame)
             # Turn the corresponding indicator green
             self.indicators[len(self.captured_images) - 1].itemconfig("light", fill="green")
@@ -357,7 +535,7 @@ class CoordinatePlacer:
         if len(self.captured_images) >= len(self.camera_coords):
             self.capture_button.config(state=tk.DISABLED)
             self.export_button.config(state=tk.NORMAL)
-            
+
         # Update the next shot label to reflect the current state
         self.update_next_shot_label()
           
@@ -749,7 +927,14 @@ class CoordinatePlacer:
             degree = self.camera_angles[idx]
             filename = f"Camera_{x}_{z}_{int(degree)}.png"
             img_path = os.path.join(export_path, filename)
-            cv2.imwrite(img_path, img)
+
+            if self.is_wireless:
+                # wireless frames were stored in RGB, so convert back to BGR
+                img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(img_path, img_bgr)
+            else:
+                # hardwired frames are already BGR
+                cv2.imwrite(img_path, img)
 
         # Save the scene plot
         self.fig.savefig(os.path.join(export_path, "scene_plot.png"))
@@ -821,16 +1006,11 @@ class CoordinatePlacer:
             
         
     def calibrate_camera_and_set_fov(self):
-        """
-        Runs camera calibration 3 times using a 9x6 checkerboard pattern (25mm squares),
-        then averages the estimated horizontal FOV values for stability.
-        User can skip if desired.
-        """
         max_calibration_images = 30
         total_runs = 3
         self.skip_calibration = False
 
-        # Initialize webcam capture
+        # Show the “Camera Calibration” info box on the main thread
         self.master.after(0, lambda: messagebox.showinfo(
             "Camera Calibration",
             "Camera calibration will run 3 times to improve accuracy.\n\n"
@@ -848,65 +1028,72 @@ class CoordinatePlacer:
         self.skip_button.pack()
         self.master.update_idletasks()
 
-        # Start webcam capture
         fov_results = []
         for run_index in range(total_runs):
             if self.skip_calibration:
                 break
-            
-            # Reset webcam capture for each run
-            checkerboard_dims = (8, 6)  # 9x7 squares gives 8x6 inner corners
-            square_size = 25.0  # in mm
+
+            checkerboard_dims = (8, 6)
+            square_size = 25.0
             criteria = (cv2.TermCriteria_EPS + cv2.TermCriteria_MAX_ITER, 30, 0.001)
 
-            # Open webcam
             objp = np.zeros((np.prod(checkerboard_dims), 3), np.float32)
             objp[:, :2] = np.mgrid[0:checkerboard_dims[0], 0:checkerboard_dims[1]].T.reshape(-1, 2)
             objp *= square_size
 
-            # Initialize lists to hold object points and image points
             objpoints = []
             imgpoints = []
 
-            # Reset the webcam capture
             count = 0
             self.calibration_progress["value"] = 0
             self.calibration_label.config(text=f"Run {run_index + 1} – Captured: 0 out of {max_calibration_images}")
             self.master.update_idletasks()
 
-            # Start webcam feed
             while count < max_calibration_images and not self.skip_calibration:
-                ret, frame = self.cap.read()
-                if not ret:
-                    continue
+                # Choose the correct frame source based on camera type
+                if self.is_wireless:
+                    # Wait for at least one wireless frame to have arrived
+                    if not hasattr(self, "latest_wireless_frame"):
+                        time.sleep(0.01)
+                        continue
+                    frame = self.latest_wireless_frame.copy()
+                    gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+                else:
+                    # Wired path: read directly from self.cap (BGR)
+                    ret, frame = self.cap.read()
+                    if not ret:
+                        continue
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-                # Convert frame to grayscale for corner detection
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                # Detect chessboard corners
                 ret_corners, corners = cv2.findChessboardCorners(
                     gray, checkerboard_dims,
                     cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
                 )
 
-                # If corners are found, refine them and add to points
                 if ret_corners:
                     objpoints.append(objp)
                     corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
                     imgpoints.append(corners2)
 
-                    # Draw the corners on the frame
-                    frame = cv2.drawChessboardCorners(frame, checkerboard_dims, corners2, ret_corners)
+                    # Draw and display the corners on whatever frame we have
+                    display_frame = frame.copy()
+                    if self.is_wireless:
+                        # frame is RGB, but drawChessboardCorners expects BGR → convert to BGR temporarily
+                        temp_bgr = cv2.cvtColor(display_frame, cv2.COLOR_RGB2BGR)
+                        cv2.drawChessboardCorners(temp_bgr, checkerboard_dims, corners2, ret_corners)
+                        temp_rgb = cv2.cvtColor(temp_bgr, cv2.COLOR_BGR2RGB)
+                        img_pil = Image.fromarray(temp_rgb)
+                    else:
+                        cv2.drawChessboardCorners(display_frame, checkerboard_dims, corners2, ret_corners)
+                        img_pil = Image.fromarray(cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB))
 
-                    # Convert frame to RGB for display in Tkinter
-                    img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    img_pil = Image.fromarray(img_rgb)
                     img_tk = ImageTk.PhotoImage(image=img_pil)
                     self.canvas_webcam.imgtk = img_tk
                     self.canvas_webcam.configure(image=img_tk)
-
-                    # Update the webcam label with the captured frame
                     self.master.update_idletasks()
 
-                    # Pause visually for 500ms
+                    # Pause 500 ms (or until skip)
                     start = time.time()
                     while time.time() - start < 0.5:
                         if self.skip_calibration:
@@ -914,7 +1101,6 @@ class CoordinatePlacer:
                         self.master.update()
                         time.sleep(0.01)
 
-                    # Increment count and update progress bar
                     count += 1
                     self.calibration_progress["value"] = count
                     self.calibration_label.config(
@@ -922,46 +1108,44 @@ class CoordinatePlacer:
                     )
                     self.master.update_idletasks()
 
-            # If the user skipped calibration, break out of the loop
             if self.skip_calibration:
                 break
 
-            # Run calibration
+            # Run the actual OpenCV calibrateCamera call on the collected points
             ret, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(
-                objpoints, imgpoints, gray.shape[::-1], None, None)
+                objpoints, imgpoints, gray.shape[::-1], None, None
+            )
 
-            # Calculate RMS reprojection error
             fx = camera_matrix[0, 0]
             w = gray.shape[1]
             fov_x = 2 * math.degrees(math.atan(w / (2 * fx)))
             fov_x = round(fov_x, 2)
             fov_results.append(fov_x)
 
-            print(f"Run {run_index+1}: RMS Reprojection Error: {ret:.4f} | Estimated Horizontal FOV: {fov_x}°")
+            print(f"Run {run_index+1}: RMS Error: {ret:.4f} | Estimated FOV: {fov_x}°")
 
-            # Draw the calibration result on the webcam label
             self.master.after(0, lambda: messagebox.showinfo(
                 f"Calibration Run {run_index + 1} Complete",
                 f"RMS Reprojection Error: {ret:.4f}\nEstimated Horizontal FOV: {fov_x}°"
             ))
 
-        # Clean up GUI elements
+        # Hide progress UI
         self.calibration_progress.pack_forget()
         self.calibration_label.pack_forget()
         self.skip_button.pack_forget()
 
-        # Release the webcam
+        # Decide final FOV
         if self.skip_calibration or len(fov_results) < 1:
-            self.master.after(0, lambda: messagebox.showwarning("Calibration Skipped", "Using default FOV of 54°."))
+            self.master.after(0, lambda: messagebox.showwarning(
+                "Calibration Skipped", "Using default FOV of 54°."
+            ))
             self.camera_fov = 54
-        # If we have valid FOV results, calculate the average
         else:
             avg_fov = round(sum(fov_results) / len(fov_results), 2)
             self.camera_fov = avg_fov
             self.master.after(0, lambda: messagebox.showinfo(
                 "Calibration Complete",
-                f"Completed {len(fov_results)} calibration runs.\n\n"
-                f"Average Horizontal FOV: {avg_fov}°"
+                f"Completed {len(fov_results)} runs.\nAverage Horizontal FOV: {avg_fov}°"
             ))
 
 
