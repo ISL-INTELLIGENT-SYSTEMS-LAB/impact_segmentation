@@ -26,7 +26,7 @@ class SegmentationApp:
         self.image_paths = sorted([
             os.path.join(export_path, f)
             for f in os.listdir(export_path)
-            if f.lower().startswith("camera_") and f.endswith(".png")
+            if "camera" in f.lower() and f.endswith(".png")
         ])
         self.mask_data = {}
         self.current_idx = 0
@@ -374,7 +374,7 @@ class SegmentationApp:
         """
         # Save current composite mask and load next image
         base_name = os.path.splitext(os.path.basename(self.image_paths[self.current_idx]))[0]
-        mask_path = os.path.join(self.export_path, f"{base_name}.jpg")
+        mask_path = os.path.join(self.export_path, f"{base_name}.tif")
         cam_id = base_name.replace("camera_", "Camera")
 
         # If no composite mask exists, create a blank one

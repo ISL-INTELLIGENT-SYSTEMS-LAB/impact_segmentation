@@ -925,7 +925,7 @@ class CoordinatePlacer:
         for idx, img in enumerate(self.captured_images):
             x, z = self.camera_coords[idx]
             degree = self.camera_angles[idx]
-            filename = f"Camera_{x}_{z}_{int(degree)}.png"
+            filename = f"{timestamp}_Camera{idx+1}_{x}_{z}_{int(degree)}.png"
             img_path = os.path.join(export_path, filename)
 
             if self.is_wireless:
