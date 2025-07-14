@@ -152,9 +152,9 @@ class SegmentationApp:
         if self.current_idx < len(self.image_paths):
             filename = os.path.basename(self.image_paths[self.current_idx])
             try:
-                x = int(filename.split('_')[1])
-                z = int(filename.split('_')[2])
-                rotation = int(filename.split('_')[3].split('.')[0])
+                x = int(filename.split('_')[3])
+                z = int(filename.split('_')[4])
+                rotation = int(filename.split('_')[5].split('.')[0])
 
                 # Draw camera marker
                 self.ax.plot(x, z, marker='^', color='green', markersize=10)
