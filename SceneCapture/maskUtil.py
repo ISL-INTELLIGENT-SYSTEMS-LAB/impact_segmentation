@@ -112,7 +112,10 @@ class SegmentationApp:
         Returns a list of object names.
         """
         # Read object names from data.json
-        json_path = os.path.join(self.export_path, "data.json")
+        timestamp = os.path.basename(self.export_path).replace("placement_data_", "")
+        print(timestamp)
+        
+        json_path = os.path.join(self.export_path, f"{timestamp}_data.json")
         if os.path.exists(json_path):
             with open(json_path, 'r') as f:
                 data = json.load(f)
@@ -403,7 +406,11 @@ class SegmentationApp:
         Save all mask data to the JSON file and exit the application.
         """
         # Save all updated JSON data to file
-        json_path = os.path.join(self.export_path, "data.json")
+        timestamp = os.path.basename(self.export_path).replace("placement_data_", "")
+        print(timestamp)
+        
+        json_path = os.path.join(self.export_path, f"{timestamp}_data.json")
+        #json_path = os.path.join(self.export_path, "data.json")
         if os.path.exists(json_path):
             with open(json_path, 'r') as f:
                 data = json.load(f)
@@ -435,6 +442,7 @@ if __name__ == "__main__":
     import os
     import torch
     from segment_anything import sam_model_registry, SamPredictor
+    import sys
 
     # Function to load the SAM predictor model
     def load_sam_predictor():
@@ -450,7 +458,11 @@ if __name__ == "__main__":
         """
         Load object names and coordinates from data.json in the specified export path.
         """
-        json_path = os.path.join(export_path, "data.json")
+        timestamp = os.path.basename(export_path).replace("placement_data_", "")
+        print(timestamp)
+        
+        json_path = os.path.join(export_path, f"{timestamp}_data.json")
+        #json_path = os.path.join(export_path, "data.json")
         if not os.path.exists(json_path):
             return [], []
         with open(json_path, 'r') as f:
@@ -470,7 +482,11 @@ if __name__ == "__main__":
         messagebox.showwarning("Cancelled", "No folder selected.")
     else:
         # Check if data.json exists in the selected folder
-        json_path = os.path.join(export_path, "data.json")
+        timestamp = os.path.basename(export_path).replace("placement_data_", "")
+        print(timestamp)
+        
+        json_path = os.path.join(export_path, f"{timestamp}_data.json")
+        #json_path = os.path.join(export_path, "data.json")
         if not os.path.exists(json_path):
             messagebox.showerror("Missing Data", "data.json not found in selected folder.")
         # Check if the SAM model checkpoint exists
