@@ -1,2 +1,1 @@
-# impact_segmentation
-Image Classification and Segmentation for Planetary Observation (IMPACT)
+# impact_segmentation - OpenUSD collection
