@@ -1,37 +1,37 @@
 from pxr import Usd, UsdGeom, UsdShade, Sdf, Gf, Tf
 
-def create_wall_mesh(stage, room_name, name, width, height, thickness, translation, rotation=None, tile_u=1, tile_v=1):
+def create_surface_mesh(stage, room_name, name, width, height, thickness, translation, rotation=None, tile_u=1, tile_v=1):
 
-    wall = UsdGeom.Mesh.Define(stage, f"{room_name}/{name}Mesh")
+    mesh = UsdGeom.Mesh.Define(stage, f"{room_name}/{name}Mesh")
 
-    # Define 4 corner points of the wall rectangle
+    # Define 4 corner points of the mesh rectangle
 
     if "wall" in name.lower():
-      wall.CreatePointsAttr([
+      mesh.CreatePointsAttr([
         Gf.Vec3f(-width, -height, 0.0),
         Gf.Vec3f(width, -height, 0.0),
         Gf.Vec3f(width, height, 0.0),
         Gf.Vec3f(-width, height, 0.0),
       ])
     else:
-      wall.CreatePointsAttr([
+      mesh.CreatePointsAttr([
         Gf.Vec3f(-width, 0.0, -thickness),
         Gf.Vec3f(width, 0.0, -thickness),
         Gf.Vec3f(width, 0.0, thickness),
         Gf.Vec3f(-width, 0.0, thickness),
       ])
     # surfaces have 4 faces) 
-    wall.CreateFaceVertexCountsAttr([4])
+    mesh.CreateFaceVertexCountsAttr([4])
     #define the normal face 
-    wall.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+    mesh.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
 
     # Apply transform
-    wall.AddTranslateOp().Set(translation)
+    mesh.AddTranslateOp().Set(translation)
     if rotation:
-        wall.AddRotateXYZOp().Set(rotation)
+        mesh.AddRotateXYZOp().Set(rotation)
 
     # Add UVs
-    primvars_api = UsdGeom.PrimvarsAPI(wall.GetPrim())
+    primvars_api = UsdGeom.PrimvarsAPI(mesh.GetPrim())
     uvs = [
         Gf.Vec2f(0.0, 0.0),
         Gf.Vec2f(tile_u, 0.0),
@@ -41,7 +41,7 @@ def create_wall_mesh(stage, room_name, name, width, height, thickness, translati
     primvar = primvars_api.CreatePrimvar("st", Sdf.ValueTypeNames.TexCoord2fArray, UsdGeom.Tokens.vertex)
     primvar.Set(uvs)
 
-    return wall
+    return mesh
 
 def create_shader_textures(stage, room_name, name, image):
 
@@ -105,13 +105,13 @@ wall_right_trans = Gf.Vec3f(WALL_X, WALL_HEIGHT , 0)
 floor_trans = Gf.Vec3f(0, WALL_THICKNESS , 0)
 
 # Create four walls
-create_wall_mesh(stage, ROOM_NAME, "Wall_Back", WALL_X, WALL_HEIGHT, WALL_THICKNESS, wall_back_trans)
-create_wall_mesh(stage, ROOM_NAME, "Wall_Front", WALL_X, WALL_HEIGHT, WALL_THICKNESS, wall_front_trans, wall_rotation_front)
-create_wall_mesh(stage, ROOM_NAME, "Wall_Left", WALL_Y, WALL_HEIGHT, WALL_THICKNESS, wall_left_trans, wall_rotation_left)
-create_wall_mesh(stage, ROOM_NAME, "Wall_Right", WALL_Y, WALL_HEIGHT, WALL_THICKNESS, wall_right_trans, wall_rotation_right)
+create_surface_mesh(stage, ROOM_NAME, "Wall_Back", WALL_X, WALL_HEIGHT, WALL_THICKNESS, wall_back_trans)
+create_surface_mesh(stage, ROOM_NAME, "Wall_Front", WALL_X, WALL_HEIGHT, WALL_THICKNESS, wall_front_trans, wall_rotation_front)
+create_surface_mesh(stage, ROOM_NAME, "Wall_Left", WALL_Y, WALL_HEIGHT, WALL_THICKNESS, wall_left_trans, wall_rotation_left)
+create_surface_mesh(stage, ROOM_NAME, "Wall_Right", WALL_Y, WALL_HEIGHT, WALL_THICKNESS, wall_right_trans, wall_rotation_right)
 
 # Create floor
-create_wall_mesh(stage, ROOM_NAME, "Floor", WALL_X, WALL_THICKNESS, WALL_Y, floor_trans, floor_rotation)
+create_surface_mesh(stage, ROOM_NAME, "Floor", WALL_X, WALL_THICKNESS, WALL_Y, floor_trans, floor_rotation)
 
 # Create material with a texture
 floor_material = create_shader_textures(stage, ROOM_NAME, "Floor", FLOOR_TEXTURE_IMAGE)
