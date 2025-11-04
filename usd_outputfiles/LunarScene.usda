@@ -1,0 +1,53 @@
+#usda 1.0
+(
+    upAxis = "Z"
+)
+
+def Xform "Moon" (
+    prepend references = @MoonStage.usda@
+)
+{
+}
+
+def Xform "Sun" (
+    prepend references = @SunStage.usda@
+)
+{
+}
+
+def Xform "FlagAssembly_Apollo11" (
+    prepend references = @flag.usda@
+)
+{
+    float3 xformOp:rotateXYZ = (88.3079, -66.51773, -64.97482)
+    double3 xformOp:translate = (15935.603182411804, 6920.11634439735, 204.42906523161378)
+    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+}
+
+def Xform "FlagAssembly_Apollo12" (
+    prepend references = @flag.usda@
+)
+{
+    float3 xformOp:rotateXYZ = (-97.54252, -66.39596, 73.49596)
+    double3 xformOp:translate = (15920.853141695368, -6896.79451436148, -913.1872301133533)
+    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+}
+
+def Xform "FlagAssembly_Apollo14" (
+    prepend references = @flag.usda@
+)
+{
+    float3 xformOp:rotateXYZ = (-101.972115, -72.15711, 83.93308)
+    double3 xformOp:translate = (16538.79208332638, -5207.886429598848, -1104.3213349839953)
+    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+}
+
+def Camera "CameraApollo11" (
+    prepend references = @camera.usda@
+)
+{
+    float3 xformOp:rotateXYZ = (110, -90, 180)
+    double3 xformOp:translate = (15829.820550194132, 7205.104581035723, 477.9647737956872)
+    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+}
+
