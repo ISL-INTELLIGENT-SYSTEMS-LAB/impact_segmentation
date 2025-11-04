@@ -1,0 +1,24 @@
+#usda 1.0
+(
+    defaultPrim = "SunRig"
+    upAxis = "Z"
+)
+
+def Xform "SunRig"
+{
+    float3 xformOp:scale = (1000, 1000, 1000)
+    uniform token[] xformOpOrder = ["xformOp:scale"]
+}
+
+def "Sun"
+{
+    def DistantLight "SunLight"
+    {
+        color3f inputs:color = (1, 0.95, 0.9)
+        float inputs:intensity = 10000
+        float xformOp:rotateX = 45
+        float xformOp:rotateZ = -30
+        uniform token[] xformOpOrder = ["xformOp:rotateX", "xformOp:rotateZ"]
+    }
+}
+
