@@ -25,8 +25,8 @@ stage.SetDefaultPrim(planeroot.GetPrim()) #set default prim for easy imports
 #####################################################################
 
 # Define variables and loading height map
-color_map = "A:/Project/LunarProject/_assets/lroc_color_poles_1k.jpg" #usdview use .jpg/.png
-height_map = "A:/Project/LunarProject/_assets/ldem_16.tif" #keep .tif for heightmap
+color_map = "A:/Project/LunarProject/_assets/lroc_color_poles_4k.tif" #usdview use .jpg/.png
+height_map = "A:/Project/LunarProject/_assets/ldem_hw5x3.tif" #keep .tif for heightmap
 
 #####################################################################
 # Below this point for tweaking moon.py
@@ -37,7 +37,7 @@ hmap = iio.imread(height_map).astype(np.float32) #read image into a NumPy array
 
 # Sphere parameters
 radius = 17.374  # Moon mean radius in km (scale as needed)
-height_scale = .03
+height_scale = .0026 #For displacement height
 subdiv_lat = int(5760) # latitude divisions
 subdiv_lon = int(2880)  # longitude divisions
 planeroot.AddTranslateOp().Set(Gf.Vec3f(0.0, 0.0, 0.0)) #z=radius to get moon above mesh centered for easy translation
@@ -85,25 +85,34 @@ extent = [
 ]
 spheremesh.CreateExtentAttr(extent)
 
-# UVs (longitude → U, latitude → V)
-u = np.linspace(0, 1, subdiv_lon)
-v = np.linspace(0, 1, subdiv_lat)
-uu, vv = np.meshgrid(u, v)
-uvs = np.stack([uu, 1 - vv], axis=-1).reshape(-1, 2)
+# Build per-corner UVs to match faceVertexIndices order
+u = np.linspace(0.0, 1.0, subdiv_lon)
+v = np.linspace(0.0, 1.0, subdiv_lat)
+
+uvs_per_corner = []
+for j in range(subdiv_lat - 1):
+    for i in range(subdiv_lon - 1):
+        # Quad corners (v0, v1, v2, v3) must match faces list
+        uvs_per_corner.extend([
+            Gf.Vec2f(float(u[i]),     float(1.0 - v[j]    )),  # v0
+            Gf.Vec2f(float(u[i+1]),   float(1.0 - v[j]    )),  # v1
+            Gf.Vec2f(float(u[i+1]),   float(1.0 - v[j+1]  )),  # v2
+            Gf.Vec2f(float(u[i]),     float(1.0 - v[j+1]  )),  # v3
+        ])
 texCoords = UsdGeom.PrimvarsAPI(spheremesh).CreatePrimvar(
-    "st", Sdf.ValueTypeNames.TexCoord2fArray, UsdGeom.Tokens.varying
-)
-texCoords.Set(uvs.tolist())
+    "st", Sdf.ValueTypeNames.TexCoord2fArray, UsdGeom.Tokens.faceVarying)
+texCoords.Set(uvs_per_corner)
+
 
 # Make a material
 print('Loading Materials...')
 material = UsdShade.Material.Define(stage, '/Moon/lunarcolor')
 ColorShader = UsdShade.Shader.Define(stage, '/Moon/lunarcolor/colorshader')
 ColorShader.CreateIdAttr("UsdPreviewSurface")
-ColorShader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(1.5)
+ColorShader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.25)
 ColorShader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
 #increase sharpness and realism
-ColorShader.CreateInput("specular", Sdf.ValueTypeNames.Float).Set(0.0)
+ColorShader.CreateInput("ior", Sdf.ValueTypeNames.Float).Set(1.0)
 ColorShader.CreateInput("clearcoat", Sdf.ValueTypeNames.Float).Set(0.0)
 
 material.CreateSurfaceOutput().ConnectToSource(ColorShader.ConnectableAPI(), "surface")
@@ -120,7 +129,7 @@ diffuseTextureSampler.CreateOutput('rgb', Sdf.ValueTypeNames.Float3)
 #Mipmapping and filtering for more detailed close range rendering 
 diffuseTextureSampler.CreateInput('wrapS', Sdf.ValueTypeNames.Token).Set('repeat')
 diffuseTextureSampler.CreateInput('wrapT', Sdf.ValueTypeNames.Token).Set('repeat')
-diffuseTextureSampler.CreateInput('filter', Sdf.ValueTypeNames.Token).Set('closest')  # or 'linear' for smoother transitions
+diffuseTextureSampler.CreateInput('filter', Sdf.ValueTypeNames.Token).Set('linear')  # or 'linear' for smoother transitions
 diffuseTextureSampler.CreateInput('sourceColorSpace', Sdf.ValueTypeNames.Token).Set('sRGB') #Test...
 ColorShader.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(diffuseTextureSampler.ConnectableAPI(), 'rgb')
 

@@ -106,7 +106,7 @@ UsdGeom.XformCommonAPI(flag_mesh).SetRotate(Gf.Vec3f(0,0,90))
 UsdGeom.XformCommonAPI(flag_mesh).SetTranslate(Gf.Vec3d(0,0,-3))
 
 # Scale assembly
-UsdGeom.XformCommonAPI(flag_assembly).SetScale(Gf.Vec3f(10,10,10))
+UsdGeom.XformCommonAPI(flag_assembly).SetScale(Gf.Vec3f(12,12,12))
 
 stage.SetDefaultPrim(flag_assembly.GetPrim())
 stage.Save()
