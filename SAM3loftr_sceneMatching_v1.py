@@ -9,7 +9,7 @@ loaded from an external YAML file.
 *NOTE:  LofTR works on grayscale images only
 
 Before running, ensure that:
-  - A 'loftr_config.yaml' file with the required settings exists in the same directory.
+  - A 'loftr_config2.yaml' file with the required settings exists in the same directory.
   - The necessary modules and dependencies are installed.
 """
 
@@ -144,7 +144,7 @@ def draw_matches(img0, img1, matchpoints0, matchpoints1, matchconf):
 # =============================================================================
 
 # Open and parse the YAML configuration file.
-with open("loftr_config.yaml", "r") as f:
+with open("loftr_config2.yaml", "r") as f:
     config = yaml.safe_load(f)
 
 # Assign configuration parameters to variables
@@ -365,4 +365,5 @@ image1_maskname = f'matched_objects_img1_{os.path.basename(IMG1_PTH).split(".")[
 plt.axis('off')
 plt.savefig(os.path.join(OUTPUT_DIR, image1_maskname), dpi=300, bbox_inches='tight')
 #plt.show()
+
 plt.clf()'''
