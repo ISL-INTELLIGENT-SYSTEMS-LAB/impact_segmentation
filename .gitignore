@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+
+# Data / outputs (don't push images or PDFs)
+temp_folder/
+copy_v2_results/
+*.pdf

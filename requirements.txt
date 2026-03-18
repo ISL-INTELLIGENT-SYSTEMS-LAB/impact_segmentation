@@ -1,0 +1,9 @@
+# DINOv2 inference — minimal dependencies
+# PyTorch must be installed separately (see SETUP_GUIDE.md):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+# Demo / utilities (for loading images and visualization)
+Pillow>=9.0.0
+numpy>=1.21.0
+matplotlib>=3.5.0
+tqdm>=4.60.0
