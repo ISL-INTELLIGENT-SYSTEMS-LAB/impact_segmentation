@@ -1,5 +1,5 @@
 # DINOv2 inference — minimal dependencies
-# PyTorch must be installed separately (see SETUP_GUIDE.md):
+# PyTorch must be installed separately (see README.md):
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 
 # Demo / utilities (for loading images and visualization)
@@ -7,3 +7,10 @@ Pillow>=9.0.0
 numpy>=1.21.0
 matplotlib>=3.5.0
 tqdm>=4.60.0
+
+# Retrieval mAP evaluation (reidentification_pipeline/demo_spot_reid_v2_Copy.py --gt_json)
+torchmetrics>=1.0.0
+
+# SAM3 + DINO re-ID pipeline also needs (install versions matching your PyTorch / CUDA):
+#   pip install transformers accelerate huggingface_hub
+# PyTorch >= 2.4 is typically required for current transformers + SAM3.

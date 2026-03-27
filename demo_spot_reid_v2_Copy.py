@@ -8,6 +8,7 @@ SAM3 + DINOv2 spot-guided reidentification pipeline (Copy / refactor).
 - main() is the driver; Pipeline class and helpers do one job each.
 """
 import argparse
+import json
 import os
 from pathlib import Path
 
@@ -104,6 +105,65 @@ def list_image_paths(directory, limit=None):
     if limit is not None:
         paths = paths[:limit]
     return paths
+
+
+def load_reid_ground_truth(gt_path):
+    """
+    Load optional re-id ground truth JSON for mAP evaluation.
+
+    Expected JSON format (list of objects):
+    [
+      {
+        "query_image": "query_a.png",
+        "query_box_idx": 0,
+        "relevant_ref_indices": [1, 3]
+      }
+    ]
+
+    query_image may be basename or full path. Internally we key by basename.
+    """
+    with open(gt_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    gt = {}
+    for item in data:
+        qimg = item["query_image"]
+        qidx = int(item["query_box_idx"])
+        refs = set(int(i) for i in item["relevant_ref_indices"])
+        key = (os.path.basename(qimg), qidx)
+        gt[key] = refs
+    return gt
+
+
+def compute_map_with_torchmetrics(eval_records):
+    """
+    Compute retrieval mAP using TorchMetrics from collected pairwise records.
+
+    eval_records item format:
+    {
+      "query_id": int,
+      "score": float,
+      "target": int (0 or 1)
+    }
+    """
+    try:
+        from torchmetrics.retrieval import RetrievalMAP
+    except Exception as exc:
+        raise RuntimeError(
+            "TorchMetrics RetrievalMAP is required for --gt_json evaluation. "
+            "Install with: pip install torchmetrics"
+        ) from exc
+
+    if not eval_records:
+        return None
+
+    preds = torch.tensor([r["score"] for r in eval_records], dtype=torch.float32)
+    target = torch.tensor([r["target"] for r in eval_records], dtype=torch.long)
+    indexes = torch.tensor([r["query_id"] for r in eval_records], dtype=torch.long)
+
+    metric = RetrievalMAP(empty_target_action="skip")
+    metric.update(preds=preds, target=target, indexes=indexes)
+    return float(metric.compute().item())
 
 
 def draw_boxes_on_image(image_path, boxes_xyxy, output_path, color=(0, 255, 0), width=3, label=None):
@@ -253,8 +313,17 @@ def parse_args():
         "--output",
         "-o",
         type=str,
-        default="/home/fog/astr_research/copy_v2_results",
+        default="/home/fog/isl_work/impact/astr_research/copy_v2_results",
         help="Output directory",
+    )
+    parser.add_argument(
+        "--gt_json",
+        type=str,
+        default=None,
+        help=(
+            "Optional JSON with query-to-reference relevance labels. "
+            "If provided, computes retrieval mAP using TorchMetrics."
+        ),
     )
     return parser.parse_args()
 
@@ -269,6 +338,11 @@ def main():
     args = parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     os.makedirs(args.output, exist_ok=True)
+    gt_map = load_reid_ground_truth(args.gt_json) if args.gt_json else None
+    eval_records = []
+    next_query_id = 0
+    evaluated_gt_keys: set[tuple[str, int]] = set()
+    sam_query_counts: dict[str, int] = {}
 
     if args.max_query_images is None:
         max_query_images = len(list_image_paths(args.image_directory))
@@ -327,6 +401,30 @@ def main():
         print(f"  {Path(qpath).name}: ref_objects={len(ref_features)}, query_objects={len(query_features)}")
         print(f"    Similarity matrix (ref x query):\n{sim_matrix}")
 
+        qname_base = os.path.basename(qpath)
+        num_query_boxes = len(query_boxes)
+        sam_query_counts[qname_base] = num_query_boxes
+
+        # Optional: build retrieval records for mAP.
+        # Each query detection is one retrieval query; refs are candidates.
+        if gt_map is not None and sim_matrix.size > 0:
+            num_ref = sim_matrix.shape[0]
+            num_query = sim_matrix.shape[1]
+            for qidx in range(num_query):
+                relevant_refs = gt_map.get((qname_base, qidx))
+                if relevant_refs is None:
+                    continue
+                for ridx in range(num_ref):
+                    eval_records.append(
+                        {
+                            "query_id": next_query_id,
+                            "score": float(sim_matrix[ridx, qidx]),
+                            "target": int(ridx in relevant_refs),
+                        }
+                    )
+                next_query_id += 1
+                evaluated_gt_keys.add((qname_base, qidx))
+
         label = f"{args.text_prompt} query image"
         if not query_boxes:
             label = f"{label} (no detections)"
@@ -334,6 +432,61 @@ def main():
             label = f"{label} Similarity: {sim_matrix.max():.4f}"
 
         draw_boxes_on_image(qpath, query_boxes, q_vis_path, label=label) 
+
+    if gt_map is not None:
+        processed_basenames = {os.path.basename(p) for p in query_paths}
+        skipped_gt: list[dict[str, str | int]] = []
+        for (basename, qidx), _refs in gt_map.items():
+            if (basename, qidx) in evaluated_gt_keys:
+                continue
+            if basename not in processed_basenames:
+                reason = "no matching query file was run (check basename vs --image_directory / --max_query_images)"
+            elif sam_query_counts.get(basename, 0) == 0:
+                reason = "SAM returned 0 detections for this image (prompt/threshold)"
+            elif qidx >= sam_query_counts.get(basename, 0):
+                reason = (
+                    f"query_box_idx {qidx} not available: SAM only returned "
+                    f"{sam_query_counts[basename]} box(es) (indices 0..{sam_query_counts[basename] - 1})"
+                )
+            else:
+                reason = "similarity matrix empty for this image (unexpected)"
+            row = {
+                "query_image": basename,
+                "query_box_idx": qidx,
+                "reason": reason,
+            }
+            skipped_gt.append(row)
+            print(
+                f"Ground truth not evaluated: query_image={basename!r}, query_box_idx={qidx} — {reason}"
+            )
+
+        map_score = compute_map_with_torchmetrics(eval_records)
+        metrics_dir = os.path.join(args.output, "metrics")
+        os.makedirs(metrics_dir, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        metrics_path = os.path.join(metrics_dir, f"metrics_{stamp}.json")
+        payload = {
+            "run_timestamp_iso": datetime.now().isoformat(timespec="seconds"),
+            "metric_name": "RetrievalMAP",
+            "torchmetrics_retrieval_map": map_score,
+            "num_labeled_queries_evaluated": next_query_id,
+            "num_pairwise_records": len(eval_records),
+            "gt_json": os.path.abspath(args.gt_json),
+            "text_prompt": args.text_prompt,
+            "ref_image_path": os.path.abspath(args.ref_image_path),
+            "query_directory": os.path.abspath(args.image_directory),
+            "dinov2_model": args.dinov2_model,
+        }
+        if map_score is None:
+            print("mAP: no evaluation records were built from gt_json (check labels and detections).")
+            payload["note"] = "No eval records; mAP not computed."
+        else:
+            print(f"mAP (TorchMetrics RetrievalMAP): {map_score:.6f}")
+        if skipped_gt:
+            payload["skipped_ground_truth"] = skipped_gt
+        with open(metrics_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        print(f"Metrics saved: {metrics_path}")
 
 if __name__ == "__main__":
     main()

@@ -12,3 +12,10 @@ env/
 temp_folder/
 copy_v2_results/
 *.pdf
+/reference_image/
+/loftr_conversion/
+
+# md files and other text files
+PHASE1_GUIDE.md
+ASTR_RECONSTRUCTION_PLAN.md
+missing.txt
