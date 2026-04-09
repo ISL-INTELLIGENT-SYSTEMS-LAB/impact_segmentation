@@ -1,0 +1,53 @@
+1. Problem Framing 
+
+“The goal isn’t just to detect a yellow ball — it’s to determine whether two yellow balls in different images are the same physical object.”
+
+2. Dataset + Labels 
+
+“We use a labeled dataset where each object has a unique ID like yball02, along with bounding boxes stored in a CSV file. This lets us know exactly where each object is and which instance it belongs to.”
+
+3. Reference Object Selection
+
+“We select one object in one image as the reference — for example, yball02 in Ball_2_IMG.png. This becomes the object we try to find across other images.”
+
+4. Bounding Box Extraction 
+
+“Instead of using a detection model, we read the exact bounding box from the CSV, which gives us a precise region of the object with no detection noise.”
+
+5. Feature Extraction with DINOv2 
+
+“We pass the object region into DINOv2, which converts the visual appearance into a numerical embedding — essentially a ‘visual fingerprint’ of the object.” 
+
+6. Query Processing 
+
+“For each new image, we extract embeddings for every labeled object in that image using the same process.”
+“Embeddings are just numbers that describe what the object looks like. DINOv2 creates them by analyzing the pixels inside each bounding box.”
+
+7. Similarity Comparison 
+
+“We compare the reference embedding to all query embeddings using cosine similarity, which gives a score for how visually similar each object is to the reference.”
+
+8. Ranking Candidates 
+
+“We rank all objects in the query image from most similar to least similar to see which one the model thinks is the best match.”
+
+9. Evaluation Metrics 
+
+“We evaluate performance using Top-1 accuracy, which checks if the correct object was ranked first, and mAP, which measures how close the correct object is to the top even if it’s not first.”
+
+10. Skipping Invalid Cases 
+
+“If the reference object isn’t present in a query image, we skip metrics for that case to keep the evaluation accurate.”
+
+11. Results Summary 
+
+“Right now we’re getting about 60% Top-1 accuracy and 75% mAP, meaning the system often finds the correct object or ranks it near the top.”
+
+
+13. Limitations 
+
+“The model can confuse visually similar objects — like multiple yellow balls — because it’s using a general feature extractor and not trained specifically for instance identity.”
+
+14. Roadmap / Next Steps ?
+
+“Next steps include improving cropping, adding thresholding for ‘not the same object,’ fine-tuning with metric learning, and then reintroducing automated detection like SAM for a full end-to-end system.”

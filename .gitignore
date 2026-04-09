@@ -1,0 +1,93 @@
+# =========================
+# 🐍 Python / Environments
+# =========================
+.venv/
+venv/
+ENV/
+env/
+
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# packaging
+*.egg-info/
+dist/
+build/
+
+# =========================
+# 💻 IDE / Editor
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# 🖥️ OS Files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# 📦 Logs / Temp
+# =========================
+*.log
+*.tmp
+*.out
+
+# =========================
+# 🧠 Models / Checkpoints
+# =========================
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+
+# =========================
+# 📊 DATASETS (IGNORE ALL)
+# =========================
+Waylon_Scene/
+data/
+datasets/
+
+# =========================
+# 📈 OUTPUTS (CRITICAL)
+# =========================
+output_dino/
+output_sam_dino_multiref/
+output_sam_loftr_boxcrops/
+output_sam_loftr_multiref_masks/
+
+# metrics / experiment results
+
+
+# visualization / slides
+sam_detection_slide_images/
+best_worst_loftr_masks/
+
+# =========================
+# 🧪 EXPERIMENT FILES
+# =========================
+*.csv
+*.json
+*.npy
+*.npz
+
+# =========================
+# 🔒 Secrets / Config
+# =========================
+.env
+.env.*
+*.env
+
+# =========================
+# 🧾 Misc
+# =========================
+*.zip
+*.tar
+*.gz
+*.rar
