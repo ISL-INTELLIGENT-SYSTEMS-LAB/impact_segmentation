@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 420" width="1400" height="420">
+  <defs>
+    <style type="text/css">
+      .title { font-family: system-ui, Segoe UI, Arial, sans-serif; font-size: 18px; font-weight: 700; fill: #1a1a2e; }
+      .subtitle { font-family: system-ui, Segoe UI, Arial, sans-serif; font-size: 12px; fill: #444; }
+      .box { fill: #e8f4fc; stroke: #2563eb; stroke-width: 2; rx: 8; }
+      .box-ref { fill: #ecfdf5; stroke: #059669; stroke-width: 2; rx: 8; }
+      .box-query { fill: #fef3c7; stroke: #d97706; stroke-width: 2; rx: 8; }
+      .box-out { fill: #f3e8ff; stroke: #7c3aed; stroke-width: 2; rx: 8; }
+      .box-eval { fill: #fce7f3; stroke: #db2777; stroke-width: 2; rx: 8; }
+      .lbl { font-family: system-ui, Segoe UI, Arial, sans-serif; font-size: 11px; fill: #1e293b; }
+      .lbl-sm { font-family: system-ui, Segoe UI, Arial, sans-serif; font-size: 10px; fill: #64748b; }
+      .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#m); }
+      .arrow-loop { stroke: #d97706; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+    </style>
+    <marker id="m" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <polygon points="0 0, 8 4, 0 8" fill="#334155"/>
+    </marker>
+  </defs>
+
+  <text x="700" y="28" text-anchor="middle" class="title">SAM3 + DINOv2 pipeline (horizontal)</text>
+  <text x="700" y="48" text-anchor="middle" class="subtitle">Reference -&gt; queries -&gt; similarity -&gt; outputs | optional GT + TorchMetrics RetrievalMAP</text>
+
+  <!-- Row 1: Reference branch -->
+  <rect x="20" y="70" width="120" height="52" class="box-ref"/>
+  <text x="80" y="92" text-anchor="middle" class="lbl">Reference image</text>
+  <text x="80" y="108" text-anchor="middle" class="lbl-sm">+ text prompt</text>
+
+  <line x1="140" y1="96" x2="168" y2="96" class="arrow"/>
+
+  <rect x="168" y="70" width="100" height="52" class="box-ref"/>
+  <text x="218" y="100" text-anchor="middle" class="lbl">SAM3</text>
+
+  <line x1="268" y1="96" x2="296" y2="96" class="arrow"/>
+
+  <rect x="296" y="70" width="130" height="52" class="box-ref"/>
+  <text x="361" y="92" text-anchor="middle" class="lbl">DINOv2</text>
+  <text x="361" y="108" text-anchor="middle" class="lbl-sm">1 vector / ref box</text>
+
+  <line x1="426" y1="96" x2="454" y2="96" class="arrow"/>
+
+  <rect x="454" y="70" width="130" height="52" class="box-ref"/>
+  <text x="519" y="100" text-anchor="middle" class="lbl">Ref features</text>
+
+  <!-- Row 2: Query loop -->
+  <rect x="20" y="155" width="120" height="52" class="box-query"/>
+  <text x="80" y="185" text-anchor="middle" class="lbl">For each query</text>
+  <text x="80" y="200" text-anchor="middle" class="lbl-sm">image</text>
+
+  <line x1="140" y1="181" x2="168" y2="181" class="arrow"/>
+
+  <rect x="168" y="155" width="100" height="52" class="box-query"/>
+  <text x="218" y="185" text-anchor="middle" class="lbl">SAM3</text>
+
+  <line x1="268" y1="181" x2="296" y2="181" class="arrow"/>
+
+  <rect x="296" y="155" width="130" height="52" class="box-query"/>
+  <text x="361" y="177" text-anchor="middle" class="lbl">DINOv2</text>
+  <text x="361" y="193" text-anchor="middle" class="lbl-sm">1 vector / query box</text>
+
+  <line x1="426" y1="181" x2="454" y2="181" class="arrow"/>
+
+  <rect x="454" y="155" width="130" height="52" class="box-query"/>
+  <text x="519" y="185" text-anchor="middle" class="lbl">Query features</text>
+
+  <!-- Merge to similarity -->
+  <path d="M 519 122 L 600 122 L 600 181 L 618 181" class="arrow"/>
+  <path d="M 519 181 L 618 181" class="arrow"/>
+
+  <rect x="618" y="130" width="160" height="72" class="box"/>
+  <text x="698" y="158" text-anchor="middle" class="lbl">Cosine similarity</text>
+  <text x="698" y="174" text-anchor="middle" class="lbl-sm">matrix: ref x query</text>
+  <text x="698" y="190" text-anchor="middle" class="lbl-sm">(per query image)</text>
+
+  <line x1="778" y1="166" x2="806" y2="166" class="arrow"/>
+
+  <rect x="806" y="130" width="200" height="72" class="box-out"/>
+  <text x="906" y="158" text-anchor="middle" class="lbl">Outputs</text>
+  <text x="906" y="174" text-anchor="middle" class="lbl-sm">segmented PNGs | matrix print</text>
+  <text x="906" y="190" text-anchor="middle" class="lbl-sm">optional: metrics JSON</text>
+
+  <!-- Optional eval row -->
+  <rect x="618" y="250" width="160" height="56" class="box-eval"/>
+  <text x="698" y="272" text-anchor="middle" class="lbl">Ground truth JSON</text>
+  <text x="698" y="290" text-anchor="middle" class="lbl-sm">(query to correct ref idx)</text>
+
+  <line x1="698" y1="206" x2="698" y2="230" class="arrow"/>
+  <line x1="698" y1="230" x2="698" y2="248" stroke="#db2777" stroke-width="2" marker-end="url(#m)"/>
+
+  <line x1="778" y1="278" x2="806" y2="278" class="arrow"/>
+
+  <rect x="806" y="242" width="200" height="72" class="box-eval"/>
+  <text x="906" y="268" text-anchor="middle" class="lbl">TorchMetrics</text>
+  <text x="906" y="284" text-anchor="middle" class="lbl">RetrievalMAP</text>
+  <text x="906" y="302" text-anchor="middle" class="lbl-sm">m-A-P vs labels</text>
+
+  <line x1="1006" y1="278" x2="1034" y2="278" class="arrow"/>
+
+  <rect x="1034" y="242" width="160" height="72" class="box-eval"/>
+  <text x="1114" y="268" text-anchor="middle" class="lbl">Metrics file</text>
+  <text x="1114" y="284" text-anchor="middle" class="lbl-sm">metrics_*.json</text>
+  <text x="1114" y="300" text-anchor="middle" class="lbl-sm">skipped GT if any</text>
+
+  <!-- Dashed link from similarity to eval (scores feed MAP) -->
+  <path d="M 778 198 Q 840 220 778 250" stroke="#db2777" stroke-width="1.5" fill="none" stroke-dasharray="5 4"/>
+  <text x="820" y="232" class="lbl-sm" fill="#db2777">scores</text>
+
+  <!-- Legend -->
+  <text x="20" y="360" class="lbl-sm">Green: reference | Amber: query | Blue: compare | Purple: artifacts | Magenta: optional eval (--gt_json)</text>
+</svg>

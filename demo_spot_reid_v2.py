@@ -2,10 +2,15 @@
 """
 SAM3 + DINOv2 spot-guided reidentification pipeline (Copy / refactor).
 
-- One reference image + prompt → all reference objects (SAM3 boxes).
-- Query set: directory of images, limited to 2–3 for testing.
-- For every (reference object × query object) pair: similarity score.
-- main() is the driver; Pipeline class and helpers do one job each.
+- One reference image + prompt → all reference objects (SAM3 boxes + instance masks).
+- Query set: directory of images, limited for testing.
+- For every (reference object × query object) pair: cosine similarity.
+
+Embedding modes (--embed_mode):
+  part (default): masked crop per detection → DINOv2PartBasedEmbedder (horizontal strips).
+  spot: legacy full-frame 224 + patch pooling inside each box (no mask).
+
+main() is the driver; Pipeline class and helpers do one job each.
 """
 import argparse
 import json
@@ -19,6 +24,8 @@ from PIL import Image
 from transformers import Sam3Model, Sam3Processor
 
 from dinov2_extractor import DINOv2FeatureExtractor
+from dinov2_part_embedder import DINOv2PartBasedEmbedder
+from masked_crop import crop_from_mask
 from datetime import datetime
 
 # Target size for DINOv2
@@ -71,6 +78,38 @@ def get_spot_features_for_boxes(extractor, image_path, boxes_xyxy, device):
     for box in boxes_xyxy:
         spot_224 = scale_box_to_224(box, orig_w, orig_h)
         feat = extractor.get_spot_features(img_tensor, spot_224)  # [1, D]
+        features_list.append(feat)
+    return features_list
+
+
+def masked_crop_to_tensor(crop_np: np.ndarray, size: int, device: str) -> torch.Tensor:
+    """Resize masked RGB crop to ``size``×``size`` and return [1, 3, size, size] in [0, 1]."""
+    pil = Image.fromarray(crop_np.astype(np.uint8))
+    transform = T.Compose([T.Resize((size, size)), T.ToTensor()])
+    return transform(pil).unsqueeze(0).to(device)
+
+
+def get_part_features_for_masked_crops(
+    part_embedder: DINOv2PartBasedEmbedder,
+    image_path: str,
+    boxes_xyxy,
+    masks: list,
+    device: str,
+):
+    """
+    One image, multiple detections: ``crop_from_mask`` per instance, resize to DEMO_SIZE,
+    part-based DINOv2 embedding per crop. Returns list of tensors [1, num_parts * embed_dim].
+    """
+    img_np = np.array(load_pil_image(image_path))
+    if len(boxes_xyxy) != len(masks):
+        raise ValueError(
+            f"boxes ({len(boxes_xyxy)}) and masks ({len(masks)}) must have the same length"
+        )
+    features_list = []
+    for box, mask in zip(boxes_xyxy, masks):
+        crop = crop_from_mask(img_np, mask, box)
+        t = masked_crop_to_tensor(crop, DEMO_SIZE, device)
+        feat = part_embedder.embed_image_tensor(t)
         features_list.append(feat)
     return features_list
 
@@ -198,7 +237,7 @@ class SpotReidPipeline:
     """
     Holds pipeline config and runs SAM3 on images. Does not hold DINOv2;
     main() creates one extractor and passes it in. Pipeline only does:
-    - run_sam3(image_path) → all detections (boxes, scores)
+    - run_sam3(image_path) → all detections (boxes, scores, masks)
     - get_query_image_paths() → list of paths (limited for testing)
     """
 
@@ -231,9 +270,13 @@ class SpotReidPipeline:
 
     def run_sam3(self, image_path):
         """
-        Run SAM3 on one image with the pipeline prompt. Returns (boxes_xyxy, scores).
-        boxes_xyxy: list of [x1, y1, x2, y2] per detection.
-        Single responsibility: image path → detections.
+        Run SAM3 on one image with the pipeline prompt.
+
+        Returns:
+            boxes_xyxy: list of [x1, y1, x2, y2] per detection.
+            scores: list of floats.
+            masks: list of numpy arrays H×W (one full-image mask per detection), for
+                   ``crop_from_mask`` / part-based embeddings.
         """
         model, processor = self._get_sam3()
         image = load_pil_image(image_path)
@@ -248,13 +291,21 @@ class SpotReidPipeline:
         )[0]
         boxes_np = results["boxes"].cpu().numpy()
         scores_np = results["scores"].cpu().numpy()
+        masks_t = results["masks"].cpu().numpy()
         if boxes_np.ndim == 1:
             boxes_np = boxes_np.reshape(1, -1)
         boxes = boxes_np.tolist()  # list of [x1,y1,x2,y2]
         scores = scores_np.tolist()
         if isinstance(scores, np.ndarray):
             scores = scores.tolist()
-        return boxes, scores
+        masks: list[np.ndarray] = []
+        n = len(boxes)
+        for i in range(n):
+            m = masks_t[i]
+            if m.ndim == 3:
+                m = np.squeeze(m, axis=0)
+            masks.append(m)
+        return boxes, scores, masks
 
     def get_query_image_paths(self):
         """Return list of query image paths, limited to max_query_images. Single responsibility."""
@@ -325,6 +376,22 @@ def parse_args():
             "If provided, computes retrieval mAP using TorchMetrics."
         ),
     )
+    parser.add_argument(
+        "--embed_mode",
+        type=str,
+        choices=("spot", "part"),
+        default="part",
+        help=(
+            "spot: resize full image to 224 and pool DINOv2 patches inside each box (legacy). "
+            "part: SAM3 mask + bbox → masked crop → DINOv2 part-based (horizontal strips) embedding."
+        ),
+    )
+    parser.add_argument(
+        "--num_parts",
+        type=int,
+        default=4,
+        help="For --embed_mode part: number of horizontal PCB-style strips (default 4).",
+    )
     return parser.parse_args()
 
 
@@ -362,9 +429,14 @@ def main():
 
     # 3) DINOv2 extractor — create once
     extractor = DINOv2FeatureExtractor(model_name=args.dinov2_model, device=device)
+    part_embedder = None
+    if args.embed_mode == "part":
+        part_embedder = DINOv2PartBasedEmbedder(
+            extractor, num_parts=args.num_parts
+        )
 
-    # 4) Reference: one image, all SAM3 boxes
-    ref_boxes, ref_scores = pipeline.run_sam3(args.ref_image_path)
+    # 4) Reference: one image, all SAM3 boxes (+ masks for part mode)
+    ref_boxes, ref_scores, ref_masks = pipeline.run_sam3(args.ref_image_path)
     if not ref_boxes:
         print("No reference detections; exiting.")
         return
@@ -376,9 +448,18 @@ def main():
         label=f"{args.text_prompt} reference image",
     )
     print(f"Reference (segmented): {ref_vis_path}")
-    ref_features = get_spot_features_for_boxes(
-        extractor, args.ref_image_path, ref_boxes, device
-    )
+    if args.embed_mode == "spot":
+        ref_features = get_spot_features_for_boxes(
+            extractor, args.ref_image_path, ref_boxes, device
+        )
+    else:
+        ref_features = get_part_features_for_masked_crops(
+            part_embedder,
+            args.ref_image_path,
+            ref_boxes,
+            ref_masks,
+            device,
+        )
 
     # 5) Query images (limited)
     query_paths = pipeline.get_query_image_paths()
@@ -388,15 +469,24 @@ def main():
 
     # 6) For each query image: SAM3 → query features → similarity vs all ref → save segmented image
     for qpath in query_paths:
-        query_boxes, query_scores = pipeline.run_sam3(qpath)
+        query_boxes, query_scores, query_masks = pipeline.run_sam3(qpath)
         
         qname = Path(qpath).stem
         q_vis_path = os.path.join(args.output, f"query_{qname}_segmented_{now}.png")
         
         print(f"  Query (segmented): {q_vis_path}")
-        query_features = get_spot_features_for_boxes(
-            extractor, qpath, query_boxes, device
-        )
+        if args.embed_mode == "spot":
+            query_features = get_spot_features_for_boxes(
+                extractor, qpath, query_boxes, device
+            )
+        else:
+            query_features = get_part_features_for_masked_crops(
+                part_embedder,
+                qpath,
+                query_boxes,
+                query_masks,
+                device,
+            )
         sim_matrix = compute_similarity_matrix(ref_features, query_features, extractor)
         print(f"  {Path(qpath).name}: ref_objects={len(ref_features)}, query_objects={len(query_features)}")
         print(f"    Similarity matrix (ref x query):\n{sim_matrix}")
@@ -476,6 +566,8 @@ def main():
             "ref_image_path": os.path.abspath(args.ref_image_path),
             "query_directory": os.path.abspath(args.image_directory),
             "dinov2_model": args.dinov2_model,
+            "embed_mode": args.embed_mode,
+            "num_parts": args.num_parts,
         }
         if map_score is None:
             print("mAP: no evaluation records were built from gt_json (check labels and detections).")
