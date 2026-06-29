@@ -1,0 +1,298 @@
+"""
+LoFTR Scene Matching
+
+This script demonstrates how to run the LoFTR matching algorithm on a pair of images,
+followed by object detection (using GroundingDINO) and mask generation (using SAM2).
+The configuration constants (such as file paths, thresholds, and image sizes) are
+loaded from an external YAML file.
+
+*NOTE:  LofTR works on grayscale images only
+
+Before running, ensure that:
+  - A 'loftr_config.yaml' file with the required settings exists in the same directory.
+  - The necessary modules and dependencies are installed.
+"""
+
+import os
+import cv2
+import torch
+import yaml
+import numpy as np
+import matplotlib.pyplot as plt
+from datetime import datetime
+from PIL import Image
+from typing import Tuple
+from lightglue import LightGlue, SuperPoint, DISK, SIFT, ALIKED, DoGHardNet
+from lightglue.utils import load_image, rbd
+from transformers import Sam3Processor, Sam3Model
+from huggingface_hub import login
+from lightglue.utils import rbd
+from pathlib import Path
+
+hf_token = os.environ["HUGGINGFACE_HUB_TOKEN"]
+login(hf_token)
+
+def visualize_lightglue_matches(
+    crop0,
+    crop1,
+    kpts0,
+    kpts1,
+    matches,
+    scores=None,
+    max_matches=100,
+    title="LightGlue matches",
+):
+    """
+    crop0, crop1: RGB numpy arrays, H x W x 3
+    kpts0, kpts1: keypoints, shape [N, 2]
+    matches: matched index pairs, shape [M, 2]
+             where each row is [idx_in_kpts0, idx_in_kpts1]
+    scores: optional match confidence scores, shape [M]
+    """
+
+    img0 = crop0.copy()
+    img1 = crop1.copy()
+
+    h0, w0 = img0.shape[:2]
+    h1, w1 = img1.shape[:2]
+
+    canvas_h = max(h0, h1)
+    canvas_w = w0 + w1
+
+    canvas = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
+    canvas[:h0, :w0] = img0
+    canvas[:h1, w0:w0 + w1] = img1
+
+    if scores is not None:
+        order = np.argsort(scores)[::-1]
+        matches = matches[order]
+        scores = scores[order]
+
+    matches = matches[:max_matches]
+
+    plt.figure(figsize=(14, 8))
+    plt.imshow(canvas)
+    plt.axis("off")
+    plt.title(title)
+
+    for i, (idx0, idx1) in enumerate(matches):
+        x0, y0 = kpts0[idx0]
+        x1, y1 = kpts1[idx1]
+        x1 = x1 + w0
+
+        plt.plot([x0, x1], [y0, y1], linewidth=0.8)
+        plt.scatter([x0, x1], [y0, y1], s=8)
+
+    plt.show()
+
+def get_sam3_results(image,text_prompt,device):
+    inputs = processor(images=image, text=text_prompt, return_tensors="pt").to(device) 
+    # Prompt the model with text
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    # Post-process results
+    sam3_results = processor.post_process_instance_segmentation(
+        outputs,
+        threshold=0.5,
+        mask_threshold=0.5,
+        target_sizes=inputs.get("original_sizes").tolist())[0]
+    return sam3_results
+
+def crop_from_mask(image, mask, bbox):
+    x0, y0, x1, y1 = map(int, bbox)
+
+    # crop the region of interest
+    crop = image[y0:y1, x0:x1].copy()
+
+    # crop the mask to the same region
+    mask_crop = mask[y0:y1, x0:x1]
+
+    # apply mask: zero out background
+    crop[~mask_crop.astype(bool)] = 0
+
+    return crop
+
+def lightglue_geometric_similarity(mkpts0, mkpts1, scores=None,
+                                   sigma=4.0, ransac_thresh=3.0):
+
+    # Ensure correct shape
+    mkpts0 = np.asarray(mkpts0).reshape(-1, 2).astype(np.float32)
+    mkpts1 = np.asarray(mkpts1).reshape(-1, 2).astype(np.float32)
+
+    # Ensure equal number of matches
+    N = min(len(mkpts0), len(mkpts1))
+    mkpts0 = mkpts0[:N]
+    mkpts1 = mkpts1[:N]
+    if scores is not None:
+        scores = scores[:N]
+
+    # Need at least 4 matches for homography
+    if N < 4:
+        return 0.0
+
+    # RANSAC homography
+    H, inlier_mask = cv2.findHomography(
+        mkpts0, mkpts1, cv2.RANSAC, ransacReprojThreshold=ransac_thresh
+    )
+
+    if H is None:
+        return 0.0
+
+    inlier_mask = inlier_mask.flatten().astype(bool)
+
+    p_in = mkpts0[inlier_mask]
+    q_in = mkpts1[inlier_mask]
+
+    if len(p_in) == 0:
+        return 0.0
+
+    # Geometric error
+    errors = np.linalg.norm(p_in - q_in, axis=1)
+    geom_weights = np.exp(-(errors ** 2) / (sigma ** 2))
+
+    # Combine with LightGlue confidence
+    if scores is not None:
+        weights = geom_weights * scores[inlier_mask]
+    else:
+        weights = geom_weights
+
+    # Normalize by total matches
+    score = weights.sum() / N
+    return float(np.clip(score, 0.0, 1.0))
+
+
+   
+# =============================================================================
+# Load Configuration from YAML File
+# =============================================================================
+
+# Open and parse the YAML configuration file.
+with open("loftr_config2.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
+# Assign configuration parameters to variables
+EXPERIMENT_NAME = config["EXPERIMENT_NAME"]
+IMG0_PTH = Path(config["IMG0_PTH"])
+IMG1_PTH = Path(config["IMG1_PTH"])
+TEXT_PROMPT = config["TEXT_PROMPT"]
+LOFTR_IMAGE_TYPE = config["LOFTR_IMAGE_TYPE"]
+SAM_MODEL_CFG = config["SAM_MODEL_ID"]
+DISPLAY_POINTS_INSIDE = config["DISPLAY_POINTS_INSIDE"]
+LOFTR_MATCHING_NAME = config["LOFTR_MATCHING_NAME"]
+RESIZE_HEIGHT = config["RESIZE_HEIGHT"]
+RESIZE_WIDTH = config["RESIZE_WIDTH"]
+
+if torch.cuda.is_available():
+    DEVICE = torch.device('cuda')
+else:
+    DEVICE = torch.device('cpu')
+    
+# Create an output directory with a unique name based on the 
+# experiment name as well as the current date and time.
+now = datetime.now()
+date = now.strftime("%Y%m%d")
+time = now.strftime("%H%M")
+OUTPUT_DIR = os.path.join(EXPERIMENT_NAME, date, time)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# =============================================================================
+# Create a label map 
+# =============================================================================
+
+labelDict = {}
+text_prompt_list = TEXT_PROMPT.split(" . ")
+for j, element in enumerate(text_prompt_list):
+  if element not in labelDict:
+    labelDict[element] = j
+#print(labelDict)
+
+
+img_ref_pil = Image.open(IMG0_PTH).convert("RGB")
+img_ref_np = np.array(img_ref_pil)   # H W 3 uint8
+
+img_pil = Image.open(IMG1_PTH).convert("RGB")
+img_np = np.array(img_pil)   # H W 3 uint8
+
+# =============================================================================
+# SAM3 Mask Generation
+# =============================================================================
+
+# select the device for computation
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Load the model
+model = Sam3Model.from_pretrained(SAM_MODEL_CFG).to(device)
+processor = Sam3Processor.from_pretrained(SAM_MODEL_CFG)
+
+# Load an image
+
+# Segment using text prompt
+sam3_results_ref = get_sam3_results(img_ref_pil,TEXT_PROMPT,device)
+sam3_results_img = get_sam3_results(img_pil,TEXT_PROMPT,device)
+
+#print(sam3_results)
+masks_ref  = sam3_results_ref["masks"].cpu().numpy()
+masks_img  = sam3_results_img["masks"].cpu().numpy()
+
+boxes_ref  = sam3_results_ref["boxes"].cpu().numpy()
+boxes_img  = sam3_results_img["boxes"].cpu().numpy()
+
+scores_ref = sam3_results_ref["scores"].cpu().numpy()
+scores_img = sam3_results_img["scores"].cpu().numpy()
+
+crop_ref = crop_from_mask(img_ref_np, masks_ref[0], boxes_ref[0])
+crop_img = crop_from_mask(img_np, masks_img[0], boxes_img[0])
+
+# =============================================================================
+# Load extractor and mat
+# =============================================================================
+
+# Read the first image and resize
+
+# SuperPoint+LightGlue
+extractor = SuperPoint(max_num_keypoints=2048).eval().cuda()  # load the extractor
+matcher = LightGlue(features='superpoint').eval().cuda()  # load the matcher
+
+img0 = torch.from_numpy(crop_ref).float() / 255.0
+img0 = img0.permute(2, 0, 1)[None].cuda()
+
+img1 = torch.from_numpy(crop_img).float() / 255.0
+img1 = img1.permute(2, 0, 1)[None].cuda()
+
+with torch.no_grad():
+    feats0 = extractor.extract(img0)
+    feats1 = extractor.extract(img1)
+
+    out = matcher({
+        "image0": feats0,
+        "image1": feats1,
+    })
+
+feats0, feats1, out = [
+    rbd(x) for x in [feats0, feats1, out]
+]
+
+kpts0 = feats0["keypoints"].detach().cpu().numpy()
+kpts1 = feats1["keypoints"].detach().cpu().numpy()
+matches = out["matches"].detach().cpu().numpy()
+
+scores = None
+if "scores" in out:
+    scores = out["scores"].detach().cpu().numpy()
+
+ 
+'''visualize_lightglue_matches(
+    crop_ref,
+    crop_img,
+    kpts0,
+    kpts1,
+    matches,
+    scores=scores,
+    max_matches=100,
+)
+
+plt.savefig("lightglue_matches.png", bbox_inches="tight", dpi=300)'''
+        
+sim_score = lightglue_geometric_similarity(kpts0, kpts1, scores)
+print(sim_score)
