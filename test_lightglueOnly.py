@@ -21,7 +21,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 from PIL import Image
-from typing import Tuple
+#from typing import Tuple
 from lightglue import LightGlue, SuperPoint, DISK, SIFT, ALIKED, DoGHardNet
 from lightglue.utils import load_image, rbd
 from transformers import Sam3Processor, Sam3Model
@@ -113,8 +113,72 @@ def crop_from_mask(image, mask, bbox):
 
     return crop
 
+def visualize_lightglue_inliers(
+    img0, img1,
+    mkpts0, mkpts1,
+    scores,
+    inlier_mask,
+    cmap='viridis',
+    point_size=8,
+    line_width=2,
+):
+    """
+    Visualize only RANSAC inliers, color-coded by LightGlue confidence.
+    """
+
+    # Convert images to RGB if needed
+    if img0.ndim == 2:
+        img0 = cv2.cvtColor(img0, cv2.COLOR_GRAY2RGB)
+    if img1.ndim == 2:
+        img1 = cv2.cvtColor(img1, cv2.COLOR_GRAY2RGB)
+
+    # Concatenate images horizontally
+    H0, W0 = img0.shape[:2]
+    H1, W1 = img1.shape[:2]
+    canvas = np.zeros((max(H0, H1), W0 + W1, 3), dtype=np.uint8)
+    canvas[:H0, :W0] = img0
+    canvas[:H1, W0:W0 + W1] = img1
+
+    # Extract inliers
+    p_in = mkpts0[inlier_mask]
+    q_in = mkpts1[inlier_mask]
+    s_in = scores[inlier_mask]
+
+    # Normalize scores for colormap
+    s_norm = (s_in - s_in.min()) / (s_in.max() - s_in.min() + 1e-8)
+    colors = plt.cm.get_cmap(cmap)(s_norm)[:, :3]  # RGB
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.imshow(canvas)
+    ax.axis('off')
+
+    # Draw matches
+    for (x0, y0), (x1, y1), color in zip(p_in, q_in, colors):
+        # Shift x1 by width of left image
+        x1_shifted = x1 + W0
+
+        ax.plot(
+            [x0, x1_shifted],
+            [y0, y1],
+            color=color,
+            linewidth=line_width,
+            alpha=0.8
+        )
+
+        ax.scatter(
+            [x0, x1_shifted],
+            [y0, y1],
+            color=color,
+            s=point_size
+        )
+
+    plt.tight_layout()
+    return fig
+
 def lightglue_geometric_similarity(mkpts0, mkpts1, scores=None,
-                                   sigma=4.0, ransac_thresh=3.0):
+                                   sigma=4.0, ransac_thresh=3.0, visFig=False, matching_name="lightglue"):
+    
+    now = datetime.now()
 
     # Ensure correct shape
     mkpts0 = np.asarray(mkpts0).reshape(-1, 2).astype(np.float32)
@@ -140,6 +204,18 @@ def lightglue_geometric_similarity(mkpts0, mkpts1, scores=None,
         return 0.0
 
     inlier_mask = inlier_mask.flatten().astype(bool)
+    
+    if visFig:
+      fig = visualize_lightglue_inliers(
+      crop_ref,
+      crop_img,
+      mkpts0,
+      mkpts1,
+      scores,
+      inlier_mask,
+      )
+      
+      fig.savefig(f"{matching_name}_inliers.png", dpi=300, bbox_inches="tight")
 
     p_in = mkpts0[inlier_mask]
     q_in = mkpts1[inlier_mask]
@@ -168,7 +244,7 @@ def lightglue_geometric_similarity(mkpts0, mkpts1, scores=None,
 # =============================================================================
 
 # Open and parse the YAML configuration file.
-with open("loftr_config2.yaml", "r") as f:
+with open("sceneREID_config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
 # Assign configuration parameters to variables
@@ -176,12 +252,13 @@ EXPERIMENT_NAME = config["EXPERIMENT_NAME"]
 IMG0_PTH = Path(config["IMG0_PTH"])
 IMG1_PTH = Path(config["IMG1_PTH"])
 TEXT_PROMPT = config["TEXT_PROMPT"]
-LOFTR_IMAGE_TYPE = config["LOFTR_IMAGE_TYPE"]
 SAM_MODEL_CFG = config["SAM_MODEL_ID"]
-DISPLAY_POINTS_INSIDE = config["DISPLAY_POINTS_INSIDE"]
-LOFTR_MATCHING_NAME = config["LOFTR_MATCHING_NAME"]
+MATCHING_NAME = config["MATCHING_NAME"]
 RESIZE_HEIGHT = config["RESIZE_HEIGHT"]
 RESIZE_WIDTH = config["RESIZE_WIDTH"]
+CREATE_SAVEDIR = config["CREATE_SAVEDIR"]
+VISUALIZE_FIG = config["VISUALIZE_FIG"]
+
 
 if torch.cuda.is_available():
     DEVICE = torch.device('cuda')
@@ -194,18 +271,8 @@ now = datetime.now()
 date = now.strftime("%Y%m%d")
 time = now.strftime("%H%M")
 OUTPUT_DIR = os.path.join(EXPERIMENT_NAME, date, time)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-# =============================================================================
-# Create a label map 
-# =============================================================================
-
-labelDict = {}
-text_prompt_list = TEXT_PROMPT.split(" . ")
-for j, element in enumerate(text_prompt_list):
-  if element not in labelDict:
-    labelDict[element] = j
-#print(labelDict)
+if CREATE_SAVEDIR:
+  os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 img_ref_pil = Image.open(IMG0_PTH).convert("RGB")
@@ -273,26 +340,25 @@ feats0, feats1, out = [
     rbd(x) for x in [feats0, feats1, out]
 ]
 
+
+
+# Raw keypoints from SuperPoint
 kpts0 = feats0["keypoints"].detach().cpu().numpy()
 kpts1 = feats1["keypoints"].detach().cpu().numpy()
-matches = out["matches"].detach().cpu().numpy()
 
-scores = None
-if "scores" in out:
-    scores = out["scores"].detach().cpu().numpy()
+# LightGlue match indices (correct fields)
+matches0 = out["matches0"].detach().cpu().numpy()            # shape (N0,)
+mscores0 = out["matching_scores0"].detach().cpu().numpy()    # shape (N0,)
 
- 
-'''visualize_lightglue_matches(
-    crop_ref,
-    crop_img,
-    kpts0,
-    kpts1,
-    matches,
-    scores=scores,
-    max_matches=100,
-)
+# Valid matches: matches0[i] = index into kpts1 or -1
+valid = matches0 > -1
 
-plt.savefig("lightglue_matches.png", bbox_inches="tight", dpi=300)'''
-        
-sim_score = lightglue_geometric_similarity(kpts0, kpts1, scores)
+# Matched keypoints (aligned!)
+mkpts0 = kpts0[valid]
+mkpts1 = kpts1[matches0[valid]]
+scores = mscores0[valid]
+    
+sim_score = lightglue_geometric_similarity(mkpts0, mkpts1, scores, visFig=VISUALIZE_FIG, matching_name=MATCHING_NAME)
 print(sim_score)
+ 
+
