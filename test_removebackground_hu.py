@@ -3,12 +3,14 @@ import torch
 import matplotlib.pyplot as plt
 import cv2
 import numpy as np
-from PIL import Image
-from transformers import Sam3Processor, Sam3Model
 from huggingface_hub import login
 from math import log10, copysign, exp
+import yaml
+from pathlib import Path
+from PIL import Image
+from transformers import Sam3Processor, Sam3Model
 
-hf_token = os.environ["HFTOKEN"]
+hf_token = os.environ["HUGGINGFACE_HUB_TOKEN"]
 login(hf_token)
 
 def get_sam3_results(image,text_prompt,device):
@@ -39,97 +41,88 @@ def crop_from_mask(image, mask, bbox):
 
     return crop
 
-   
-# =============================================================================
-# Load the Input Image Pair using pillow, and resize to same size used in LoFTR
-# =============================================================================
-IMG_REF = r"D:\hu_moments\IMG_2245.jpg"
-IMG_PTH = r"D:\hu_moments\IMG_2246.jpg"
-TEXT_PROMPT = "blue mug"
-SAM_MODEL_CFG = "facebook/sam3"
-y = 3
+def load_hu(crop1, crop2, y):
 
-img_ref_pil = Image.open(IMG_REF).convert("RGB")
-img_ref_np = np.array(img_ref_pil)   # H W 3 uint8
+  gray_ref = Image.fromarray(crop1)
+  gray_img = Image.fromarray(crop2)
 
-img_pil = Image.open(IMG_PTH).convert("RGB")
-img_np = np.array(img_pil)   # H W 3 uint8
+  gray_ref = gray_ref.convert("L")
+  gray_img = gray_img.convert("L")
 
-#img0_pil = img0_pil.resize((RESIZE_WIDTH, RESIZE_HEIGHT ))
+  _,gray_ref = cv2.threshold(np.array(gray_ref), 128, 255, cv2.THRESH_BINARY)
+  _,gray_img = cv2.threshold(np.array(gray_img), 128, 255, cv2.THRESH_BINARY)
 
-# =============================================================================
-# SAM3 Mask Generation
-# =============================================================================
+  distance = cv2.matchShapes(gray_ref, gray_img, cv2.CONTOURS_MATCH_I2, 0)
+  #print(distance)
 
-# select the device for computation
-device = "cuda" if torch.cuda.is_available() else "cpu"
+  hu_sim_score = exp(-y * distance)
+  return(hu_sim_score)
+  
+if __name__ == "__main__":
+  # =============================================================================
+  # Load the Input Image Pair using pillow, and resize to same size used in LoFTR
+  # =============================================================================
 
-# Load the model
-model = Sam3Model.from_pretrained(SAM_MODEL_CFG).to(device)
-processor = Sam3Processor.from_pretrained(SAM_MODEL_CFG)
+  # Open and parse the YAML configuration file.
+  with open("sceneREID_config.yaml", "r") as f:
+      config = yaml.safe_load(f)
 
-# Load an image
+  # Assign configuration parameters to variables
+  EXPERIMENT_NAME = config["EXPERIMENT_NAME"]
+  IMG_REF = Path(config["IMG0_PTH"])
+  IMG_PTH = Path(config["IMG1_PTH"])
+  TEXT_PROMPT = config["TEXT_PROMPT"]
+  SAM_MODEL_CFG = config["SAM_MODEL_ID"]
+  MATCHING_NAME = config["MATCHING_NAME"]
+  RESIZE_HEIGHT = config["RESIZE_HEIGHT"]
+  RESIZE_WIDTH = config["RESIZE_WIDTH"]
+  CREATE_SAVEDIR = config["CREATE_SAVEDIR"]
+  VISUALIZE_FIG = config["VISUALIZE_FIG"]
+  Y = config["Y"]
+  
+  if torch.cuda.is_available():
+      DEVICE = torch.device('cuda')
+  else:
+      DEVICE = torch.device('cpu')
+      
+  img_ref_pil = Image.open(IMG_REF).convert("RGB")
+  img_ref_np = np.array(img_ref_pil)   # H W 3 uint8
 
-# Segment using text prompt
-sam3_results_ref = get_sam3_results(img_ref_pil,TEXT_PROMPT,device)
-sam3_results_img = get_sam3_results(img_pil,TEXT_PROMPT,device)
+  img_pil = Image.open(IMG_PTH).convert("RGB")
+  img_np = np.array(img_pil)   # H W 3 uint8
 
-#print(sam3_results)
-masks_ref  = sam3_results_ref["masks"].cpu().numpy()
-masks_img  = sam3_results_img["masks"].cpu().numpy()
+  #img0_pil = img0_pil.resize((RESIZE_WIDTH, RESIZE_HEIGHT ))
 
-boxes_ref  = sam3_results_ref["boxes"].cpu().numpy()
-boxes_img  = sam3_results_img["boxes"].cpu().numpy()
+  # =============================================================================
+  # SAM3 Mask Generation
+  # =============================================================================
 
-scores_ref = sam3_results_ref["scores"].cpu().numpy()
-scores_img = sam3_results_img["scores"].cpu().numpy()
-#labels = sam3_results["labels"]
+  # Load the model
+  model = Sam3Model.from_pretrained(SAM_MODEL_CFG).to(DEVICE)
+  processor = Sam3Processor.from_pretrained(SAM_MODEL_CFG)
 
-"""for i in range(len(masks)):
-    mask  = masks[i]
-    bbox   = boxes[i]
-    score = scores[i]
-    label = TEXT_PROMPT#[i]   # SAM3 assigns the prompt index
-    
-    crop = crop_from_mask(img0_np, mask, bbox)
-    plt.imshow(crop)
-    plt.show()
-    """
-#print(masks_ref[0])
-crop_ref = crop_from_mask(img_ref_np, masks_ref[0], boxes_ref[0])
-crop_img = crop_from_mask(img_np, masks_img[0], boxes_img[0])
+  # Load an image
 
-gray_ref = Image.fromarray(crop_ref)
-gray_img = Image.fromarray(crop_img)
+  # Segment using text prompt
+  sam3_results_ref = get_sam3_results(img_ref_pil,TEXT_PROMPT,DEVICE)
+  sam3_results_img = get_sam3_results(img_pil,TEXT_PROMPT,DEVICE)
 
-gray_ref = gray_ref.convert("L")
-gray_img = gray_img.convert("L")
-#print(len(gray_ref.getbands()))
+  #print(sam3_results)
+  masks_ref  = sam3_results_ref["masks"].cpu().numpy()
+  masks_img  = sam3_results_img["masks"].cpu().numpy()
 
-_,gray_ref = cv2.threshold(np.array(gray_ref), 128, 255, cv2.THRESH_BINARY)
-_,gray_img = cv2.threshold(np.array(gray_img), 128, 255, cv2.THRESH_BINARY)
+  boxes_ref  = sam3_results_ref["boxes"].cpu().numpy()
+  boxes_img  = sam3_results_img["boxes"].cpu().numpy()
 
-#moments_ref = cv2.moments(gray_ref)
-#hu_moments_ref = cv2.HuMoments(moments_ref)
+  scores_ref = sam3_results_ref["scores"].cpu().numpy()
+  scores_img = sam3_results_img["scores"].cpu().numpy()
+  #labels = sam3_results["labels"]
 
-#moments_img = cv2.moments(gray_img)
-#hu_moments_img = cv2.HuMoments(moments_img)
-
-"""for i in range(0,7):
-   hu_moments_ref[i] = -1* copysign(1.0, hu_moments_ref[i]) * log10(abs(hu_moments_ref[i]))
-"""
-"""for i in range(0,7):
-   hu_moments_img[i] = -1* copysign(1.0, hu_moments_img[i]) * log10(abs(hu_moments_img[i]))
-"""
-#print(hu_moments_ref)
-#print(hu_moments_img)
-distance = cv2.matchShapes(gray_ref, gray_img, cv2.CONTOURS_MATCH_I2, 0)
-print(distance)
-
-#d_ = distance / (1 + distance)
-#s_shape = exp(-y * d_)
-
-s_shape = exp(-y * distance)
-print(s_shape)
+  #print(masks_ref[0])
+  crop_ref = crop_from_mask(img_ref_np, masks_ref[0], boxes_ref[0])
+  crop_img = crop_from_mask(img_np, masks_img[0], boxes_img[0])
+  
+  hu_sim_score = load_hu(crop_ref, crop_img, Y)
+  print(hu_sim_score)
 
 

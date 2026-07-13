@@ -6,6 +6,8 @@ from transformers import CLIPVisionModel, CLIPImageProcessor, Sam3Processor, Sam
 from PIL import Image
 from huggingface_hub import login
 import matplotlib.pyplot as plt
+import yaml
+from pathlib import Path
 
 class PartBasedEmbedding(nn.Module):
     def __init__(self, model_name="openai/clip-vit-base-patch32", num_parts=4):
@@ -40,30 +42,19 @@ class PartBasedEmbedding(nn.Module):
         return emb
 
 
-def get_sam3_results(image, text_prompt, model_name, device):
-  model = Sam3Model.from_pretrained(model_name).to(device)
-  processor = Sam3Processor.from_pretrained(model_name)
+def get_sam3_results(image,text_prompt,device):
+    inputs = processor(images=image, text=text_prompt, return_tensors="pt").to(device) 
+    # Prompt the model with text
+    with torch.no_grad():
+        outputs = model(**inputs)
 
-  # Load an image
-  
-  # Segment using text prompt
-  
-  inputs = processor(images=image, text=text_prompt, return_tensors="pt").to(device) 
-  # Prompt the model with text
-  with torch.no_grad():
-      outputs = model(**inputs)
-  
-  # Post-process results
-  results = processor.post_process_instance_segmentation(
-      outputs,
-      threshold=0.5,
-      mask_threshold=0.5,
-      target_sizes=inputs.get("original_sizes").tolist())[0]
-  masks  = results["masks"].cpu().numpy().tolist()
-  boxes  = results["boxes"].cpu().numpy().tolist()
-  scores = results["scores"].cpu().numpy().tolist()
-    
-  return masks, boxes, scores
+    # Post-process results
+    sam3_results = processor.post_process_instance_segmentation(
+        outputs,
+        threshold=0.5,
+        mask_threshold=0.5,
+        target_sizes=inputs.get("original_sizes").tolist())[0]
+    return sam3_results
 
 def cosine_similarity(a, b):
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))
@@ -83,51 +74,76 @@ def crop_from_mask(image, mask, bbox):
 
     return crop
 
+def load_partsbasedencoding(crop1, crop2, parts_modelname, num_parts):
+  clip_embed_obj = PartBasedEmbedding(parts_modelname, num_parts)
+   
+  ref_embed = clip_embed_obj.forward(crop1).detach().numpy()
+  ref_embed = ref_embed.reshape(-1)
 
+  img2_embed = clip_embed_obj.forward(crop2).detach().numpy()
+  img2_embed = img2_embed.reshape(-1)
+  
+  partsbased_sim_score = cosine_similarity(ref_embed, img2_embed)
+  return  partsbased_sim_score
+  
 if __name__ == "__main__":
 
   hf_token = os.environ["HUGGINGFACE_HUB_TOKEN"]
   login(hf_token)
-  
-  #image_reference = r"E:\IMPACT\data_collection\scene_integration\easter_files\placement_data_20250603_130127\20250603_130127_Camera7_-1_1_270.png"
-  image_reference = r"E:\IMPACT\data_collection\scene_integration\easter_files\placement_data_20250603_130127\20250603_130127_Camera5_-1_1_180.png"
-  image2 = r"E:\IMPACT\data_collection\scene_integration\easter_files\placement_data_20250603_130127\20250603_130127_Camera23_-3_-1_90.png"
-       
-  TEXT_PROMPT = "orange egg" 
-  SAM_MODEL_NAME = "facebook/sam3"
-  CLIP_MODEL_NAME = "openai/clip-vit-base-patch32"
-  NUM_PARTS = 6
-  threshold_same = 0.8
-  threshold_class = 0.5
-  threshold_not = 0.3
+ 
+  # =============================================================================
+  # Load Configuration from YAML File
+  # =============================================================================
 
-  clip_embed_obj = PartBasedEmbedding(CLIP_MODEL_NAME, NUM_PARTS)
-  
-  device = "cuda" if torch.cuda.is_available() else "cpu"
-  
-  ref_pil = Image.open(image_reference).convert("RGB")
-  ref_masks, ref_bbox, ref_scores = get_sam3_results(image_reference, TEXT_PROMPT, SAM_MODEL_NAME, device)
-  ref_bbox = [int(x) for x in ref_bbox[0]]
-  ref_crop = crop_from_mask(np.array(ref_pil), np.array(ref_masks[0]), ref_bbox)
-  
-  ref_embed = clip_embed_obj.forward(ref_crop).detach().numpy()
-  ref_embed = ref_embed.reshape(-1)
+  # Open and parse the YAML configuration file.
+  with open("sceneREID_config.yaml", "r") as f:
+      config = yaml.safe_load(f)
 
+  # Assign configuration parameters to variables
+  EXPERIMENT_NAME = config["EXPERIMENT_NAME"]
+  IMG0_PTH = Path(config["IMG0_PTH"])
+  IMG1_PTH = Path(config["IMG1_PTH"])
+  TEXT_PROMPT = config["TEXT_PROMPT"]
+  SAM_MODEL_CFG = config["SAM_MODEL_ID"]
+  MATCHING_NAME = config["MATCHING_NAME"]
+  RESIZE_HEIGHT = config["RESIZE_HEIGHT"]
+  RESIZE_WIDTH = config["RESIZE_WIDTH"]
+  CREATE_SAVEDIR = config["CREATE_SAVEDIR"]
+  VISUALIZE_FIG = config["VISUALIZE_FIG"]
+  CLIP_MODEL_NAME = config["VIT_MODEL_NAME"]
+  NUM_PARTS = config['NUM_PARTS']
+  
+  if torch.cuda.is_available():
+      DEVICE = torch.device('cuda')
+  else:
+      DEVICE = torch.device('cpu')
 
-  
-  
-  img2_pil = Image.open(image2).convert("RGB")
-  img2_masks, img2_bbox, img2_scores = get_sam3_results(image2, TEXT_PROMPT, SAM_MODEL_NAME, device)
-  
-  img2_bbox = [int(x) for x in img2_bbox[0]]
-  img2_crop = crop_from_mask(np.array(img2_pil), np.array(img2_masks[0]), img2_bbox)
-  #plt.imshow(img2_crop)
-  #plt.imshow(ref_crop)
-  #plt.show()
-  
-  img2_embed = clip_embed_obj.forward(img2_crop).detach().numpy()
-  img2_embed = img2_embed.reshape(-1)
-  
-  cos_sim = cosine_similarity(ref_embed, img2_embed)
-  print(cos_sim)
-  
+  img_ref_pil = Image.open(IMG0_PTH).convert("RGB")
+  img_ref_np = np.array(img_ref_pil)   # H W 3 uint8
+
+  img_pil = Image.open(IMG1_PTH).convert("RGB")
+  img_np = np.array(img_pil)   # H W 3 uint8
+
+    # Load the model
+  model = Sam3Model.from_pretrained(SAM_MODEL_CFG).to(DEVICE)
+  processor = Sam3Processor.from_pretrained(SAM_MODEL_CFG)
+
+  # Segment using text prompt
+  sam3_results_ref = get_sam3_results(img_ref_pil,TEXT_PROMPT,DEVICE)
+  sam3_results_img = get_sam3_results(img_pil,TEXT_PROMPT,DEVICE)
+
+  #print(sam3_results)
+  masks_ref  = sam3_results_ref["masks"].cpu().numpy()
+  masks_img  = sam3_results_img["masks"].cpu().numpy()
+
+  boxes_ref  = sam3_results_ref["boxes"].cpu().numpy()
+  boxes_img  = sam3_results_img["boxes"].cpu().numpy()
+
+  scores_ref = sam3_results_ref["scores"].cpu().numpy()
+  scores_img = sam3_results_img["scores"].cpu().numpy()
+
+  crop_ref = crop_from_mask(img_ref_np, masks_ref[0], boxes_ref[0])
+  crop_img = crop_from_mask(img_np, masks_img[0], boxes_img[0])
+
+  part_simscore = load_partsbasedencoding(crop_ref, crop_img, CLIP_MODEL_NAME, NUM_PARTS)
+  print(part_simscore)
