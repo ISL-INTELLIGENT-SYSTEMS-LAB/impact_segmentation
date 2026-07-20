@@ -1,20 +1,18 @@
-# config.yaml
+# sceneREID_config.yaml
 
-EXPERIMENT_NAME: "CODa_ReID"
-TEXT_PROMPT: "blue ball"
-IMG0_PTH: "E:/IMPACT/data_collection/scene_integration/easter_files/placement_data_20250603_130127/20250603_130127_Camera19_-4_0_90.png"
-IMG1_PTH: "E:/IMPACT/data_collection/scene_integration/easter_files/placement_data_20250603_130127/20250603_130127_Camera22_-3_-1_45.png"
+PROJECT_NAME: "FSU_SceneIntegration_ReID"
+EXPERIMENT_NAME: "russian_vehicles"
+TEXT_PROMPT: "vehicle"
+IMG0_PTH: "E:/IMPACT/impact_segmentation/Airbase_29_img.png"
+IMG1_PTH: "E:/IMPACT/impact_segmentation/Airbase_54_img.png"
 SAM_MODEL_ID: "facebook/sam3"
 MATCHING_NAME: "LightGlue_matching"
 RESIZE_HEIGHT: 480
 RESIZE_WIDTH: 640
-CREATE_SAVEDIR: False
-VISUALIZE_FIG: False
-Y: 3
+VISUALIZE_FIG: True
+Y: 4
 VIT_MODEL_NAME: "openai/clip-vit-base-patch32"
-NUM_PARTS: 6
-A: 0.6
+NUM_PARTS: 4
+A: 0.8
 B: 0.15
 C: 0.05
-D: 0.1
-E: 0.1
