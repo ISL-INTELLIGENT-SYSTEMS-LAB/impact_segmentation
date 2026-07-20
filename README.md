@@ -17,7 +17,7 @@ This project demonstrates a custom image processing pipeline that utilizes advan
      - Generates masks and bounding boxes for detected objects.
   3. **Shape matching (Hu moments):**
      - finds matches that have similar shapes
-  4. **Result Exporting: **
+  4. **Result Exporting:**
      - Saves the matching figures to a timestamped output directory.'''
 
 ## Installation
@@ -57,3 +57,6 @@ python FSU_sceneREID.py
   - `NUM_PARTS`: Number of parts to split parts based encoding into
   -  `A`, `B`, `C`,: Weights to give to the algorithm based on the contribution of the component you want to emphasize
   -  total_simularity_score =  A*part_sim_score + B*lg_sim_score + C*hu_sim_score
+
+## Next steps for `FSU_sceneREID.py`:
+- add in argparse and convert `sceneREID_config.yaml` into arguments that can be passed on the command line.
