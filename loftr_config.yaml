@@ -1,0 +1,18 @@
+# config.yaml
+
+EXPERIMENT_NAME: "FSU_stilllife_scene"
+TEXT_PROMPT: "egg . bowl . cup"
+IMG0_PTH: E:\IMPACT\data_collection\scene_integration\placement_data_20250407_130958\camera_1.png
+IMG1_PTH: E:\IMPACT\data_collection\scene_integration\placement_data_20250407_130958\camera_2.png
+LOFTR_IMAGE_TYPE: "indoor"
+GDINO_MODEL_ID: "IDEA-Research/grounding-dino-base"
+BOX_THRESHOLD: 0.35
+TEXT_THRESHOLD: 0.25
+SAM2_MODEL_ID: "facebook/sam2-hiera-large"
+DISPLAY_POINTS_INSIDE: false
+LOFTR_MATCHING_NAME: "LoFTR_matching"
+RESIZE_HEIGHT: 480
+RESIZE_WIDTH: 640
+
+
+
