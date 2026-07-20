@@ -17,45 +17,41 @@ This project demonstrates a custom image processing pipeline that utilizes advan
      - Generates masks for detected objects and refines them using matching keypoints.
   3. **Shape matching (Hu moments):**
      - finds matches that have similar shapes
-  '''4. **Result Exporting:**
-     - Saves the matching figures, object masks, and refined results to a timestamped output directory.'''
+  4. **Result Exporting: **
+     - Saves the matching figures to a timestamped output directory.'''
 
 ## Installation
 Ensure all necessary Python packages are installed:
 
 ```bash
-pip install opencv-python numpy matplotlib torch torchvision pyyaml shapely
+pip install -r requirements.txt
 ```
 
 ## Usage
 1. **Update Configuration:**
-   - Modify `config.yaml` to specify your image paths, model weights, thresholds, and other parameters.
+   - Modify `sceneREID_config.yaml` to specify your image paths, model weights, thresholds, and other parameters.
 
 2. **Run the Program:**
 
 ```bash
-python main_script.py
+python FSU_sceneREID.py
 ```
 
 3. **Review the Output:**
    - Results, including matching figures and object masks, will be saved in a uniquely named directory based on the current timestamp.
 
-## Configuration Details (`config.yaml`)
+## Configuration Details (`sceneREID_config.yaml`)
+- **Project details:**
+  -`PROJECT_NAME`, `EXPERIMENT_NAME`: project specific identifiers so multiple projects can be maintained 
 - **Image Paths:**
   - `IMG0_PTH`, `IMG1_PTH`: Paths to the two images to be processed.
 - **Model Paths:**
-  - `LOFTR_INDOOR_PATH`, `LOFTR_OUTDOOR_PATH`: Paths to LoFTR model weights.
-  - `GDINO_SCRIPT`, `GDINO_WEIGHTS`: Paths to GroundingDINO configurations and weights.
-  - `SAM_CHECKPOINT`, `SAM_MODEL_CFG`: Paths to the SAM2 model and its configuration.
+  - `SAM_MODEL_ID`: Paths to the SAM3 model on Huggingface.
+  - `VIT_MODEL_NAME`: Paths to the CLIP model on Huggingface (if another VIT model is used, the corresponding libraries will need to be imported into the python file.)
 - **Processing Options:**
-  - `BOX_THRESHOLD`, `TEXT_THRESHOLD`: Confidence thresholds for object detection.
-  - `DISPLAY_POINTS_INSIDE`: Option to display matching points within detected objects.
+  - `VISUALIZE_FIG`: Option to display figures of original images, images with masks and matched objects with masks.
   - `RESIZE_HEIGHT`, `RESIZE_WIDTH`: Image dimensions for processing.
-
-## Subfolder Documentation
-Each subfolder in this repository contains its own `README.md` file, providing detailed guidance on usage and functionality for that specific component. Users are encouraged to review these README files for deeper insights and step-by-step instructions on how each module operates.
-
-## Notes
-- The program ensures flexibility by adapting processing based on whether the images are indoor or outdoor.
-- Error handling is integrated to notify users when matches or detections may be insufficient.
-- The modular design supports easy extension and integration with other image processing pipelines.
+- **Algorithm Weights:**
+  - `Y`: Weight to give Hu Moments to normalize
+  -  `A`, `B`, `C`,: Weights to give to the algorithm based on the contribution of the component you want to emphasize
+  -  total_simularity_score =  A*part_sim_score + B*lg_sim_score + C*hu_sim_score
