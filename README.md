@@ -49,6 +49,7 @@ python FSU_sceneREID.py
   - `SAM_MODEL_ID`: Paths to the SAM3 model on Huggingface.
   - `VIT_MODEL_NAME`: Paths to the CLIP model on Huggingface (if another VIT model is used, the corresponding libraries will need to be imported into the python file.)
 - **Processing Options:**
+  - `TEXT_PROMPT`: Required to localize and label the object of interest
   - `VISUALIZE_FIG`: Option to display figures of original images, images with masks and matched objects with masks.
   - `RESIZE_HEIGHT`, `RESIZE_WIDTH`: Image dimensions for processing.
 - **Algorithm Weights:**
