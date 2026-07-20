@@ -13,8 +13,8 @@ This project demonstrates a custom image processing pipeline that utilizes advan
   1. **Feature Matching (LightGlue):**
      - Matches keypoints between two images using the LG algorithm.
   2. **Object Detection and mask generation(SAM3):**
-     - Detects specified objects in the first image based on text prompts.
-     - Generates masks for detected objects and refines them using matching keypoints.
+     - Detects specified objects in the both images based on text prompts.
+     - Generates masks and bounding boxes for detected objects.
   3. **Shape matching (Hu moments):**
      - finds matches that have similar shapes
   4. **Result Exporting: **
