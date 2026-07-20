@@ -6,18 +6,19 @@ This project demonstrates a custom image processing pipeline that utilizes advan
 ## Main Components
 
 - **Configuration:**
-  - All adjustable parameters are defined in the `config.yaml` file, including paths for images, model weights, thresholds, and display options.
+  - All adjustable parameters are defined in the `sceneREID_config.yaml` file, including paths for images, model weights, thresholds, and display options.
   - Users can easily modify image paths, model configurations, and processing settings.
 
 - **Processing Workflow:**
-  1. **Feature Matching (LoFTR):**
-     - Matches keypoints between two images using the LoFTR algorithm.
-  2. **Object Detection (GroundingDINO):**
+  1. **Feature Matching (LightGlue):**
+     - Matches keypoints between two images using the LG algorithm.
+  2. **Object Detection and mask generation(SAM3):**
      - Detects specified objects in the first image based on text prompts.
-  3. **Mask Generation (SAM2):**
      - Generates masks for detected objects and refines them using matching keypoints.
-  4. **Result Exporting:**
-     - Saves the matching figures, object masks, and refined results to a timestamped output directory.
+  3. **Shape matching (Hu moments):**
+     - finds matches that have similar shapes
+  '''4. **Result Exporting:**
+     - Saves the matching figures, object masks, and refined results to a timestamped output directory.'''
 
 ## Installation
 Ensure all necessary Python packages are installed:
