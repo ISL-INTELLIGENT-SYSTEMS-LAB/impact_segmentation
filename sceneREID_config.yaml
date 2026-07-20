@@ -2,15 +2,15 @@
 
 PROJECT_NAME: "FSU_SceneIntegration_ReID"
 EXPERIMENT_NAME: "russian_vehicles"
-TEXT_PROMPT: "vehicle"
 IMG0_PTH: "E:/IMPACT/impact_segmentation/Airbase_29_img.png"
 IMG1_PTH: "E:/IMPACT/impact_segmentation/Airbase_54_img.png"
 SAM_MODEL_ID: "facebook/sam3"
+VIT_MODEL_NAME: "openai/clip-vit-base-patch32"
+TEXT_PROMPT: "vehicle"
 RESIZE_HEIGHT: 480
 RESIZE_WIDTH: 640
 VISUALIZE_FIG: True
 Y: 4
-VIT_MODEL_NAME: "openai/clip-vit-base-patch32"
 NUM_PARTS: 4
 A: 0.8
 B: 0.15
