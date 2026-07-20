@@ -44,15 +44,16 @@ python FSU_sceneREID.py
 - **Project details:**
   -`PROJECT_NAME`, `EXPERIMENT_NAME`: project specific identifiers so multiple projects can be maintained 
 - **Image Paths:**
-  - `IMG0_PTH`, `IMG1_PTH`: Paths to the two images to be processed.
+  - `IMG0_PTH`, `IMG1_PTH`: Paths to the two images to be processed
 - **Model Paths:**
   - `SAM_MODEL_ID`: Paths to the SAM3 model on Huggingface.
-  - `VIT_MODEL_NAME`: Paths to the CLIP model on Huggingface (if another VIT model is used, the corresponding libraries will need to be imported into the python file.)
+  - `VIT_MODEL_NAME`: Paths to the CLIP model on Huggingface (if another VIT model is used, the corresponding libraries will need to be imported into the python file)
 - **Processing Options:**
   - `TEXT_PROMPT`: Required to localize and label the object of interest
-  - `VISUALIZE_FIG`: Option to display figures of original images, images with masks and matched objects with masks.
-  - `RESIZE_HEIGHT`, `RESIZE_WIDTH`: Image dimensions for processing.
+  - `VISUALIZE_FIG`: Option to display figures of original images, images with masks and matched objects with masks
+  - `RESIZE_HEIGHT`, `RESIZE_WIDTH`: Image dimensions for processing
 - **Algorithm Weights:**
   - `Y`: Weight to give Hu Moments to normalize
+  - `NUM_PARTS`: Number of parts to split parts based encoding into
   -  `A`, `B`, `C`,: Weights to give to the algorithm based on the contribution of the component you want to emphasize
   -  total_simularity_score =  A*part_sim_score + B*lg_sim_score + C*hu_sim_score
