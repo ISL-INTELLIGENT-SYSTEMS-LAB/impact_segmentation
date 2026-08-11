@@ -25,25 +25,27 @@ PORT = 9000
 EXPERIMENT_LOG_FILENAME = "experiment.log"
 EXPERIMENT_CONFIG_NAME = "experiment_config.json"
 MIN_TARGET_PIXELS = 500
-TARGET_OBJECT = "BP_Fighter_jet_2_C_3"
+TARGET_OBJECT = "Car_C_26"
 CAMERA_WIDTH = 1920
 CAMERA_HEIGHT = 1080
 CAMERA_FOV = 90
 
 # Unreal units: 100 uu = 1 meter
 RADII = [
-    500,    # 5 m
+    #500,    # 5 m
     1000,   # 10 m
     1500,   # 15 m
     2000,   # 20 m
+    3000,   # 30 m
 ]
 
 # Elevation angle above the target, in degrees.
 # Use [15] if you only want one elevation.
 ELEVATIONS = [
-    5,
+    #5,
     15,
     30,
+    45,
 ]
 
 # Number of positions around each 360-degree orbit
