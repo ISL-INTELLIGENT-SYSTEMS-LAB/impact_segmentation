@@ -1,17 +1,33 @@
-# sceneREID_config.yaml
-
 PROJECT_NAME: "FSU_SceneIntegration_ReID"
-EXPERIMENT_NAME: "russian_vehicles"
-IMG0_PTH: "E:/IMPACT/impact_segmentation/Airbase_29_img.png"
-IMG1_PTH: "E:/IMPACT/impact_segmentation/Airbase_54_img.png"
+EXPERIMENT_NAME: "russian_vehicles_hybrid"
+IMG0_PTH: "D:/IMPACT_first/impact_segmentation/sceneREID_hybrid/Airbase_29_img.png"
+IMG1_PTH: "D:/IMPACT_first/impact_segmentation/sceneREID_hybrid/Airbase_54_img.png"
+DEVICE: "auto"
 SAM_MODEL_ID: "facebook/sam3"
-VIT_MODEL_NAME: "openai/clip-vit-base-patch32"
 TEXT_PROMPT: "vehicle"
-VISUALIZE_FIG: True
-RESIZE_HEIGHT: 480
-RESIZE_WIDTH: 640
-Y: 4
+SAM_SCORE_THRESHOLD: 0.5
+SAM_MASK_THRESHOLD: 0.5
+MIN_MASK_PIXELS: 32
+VIT_MODEL_NAME: "openai/clip-vit-base-patch32"
+CLIP_MODE: "global"  # global or parts, for appearance ablation
 NUM_PARTS: 4
-A: 0.8
-B: 0.15
-C: 0.05
+LIGHTGLUE_MAX_KEYPOINTS: 2048
+LIGHTGLUE_MIN_INLIERS: 8
+LIGHTGLUE_RANSAC_THRESHOLD: 3.0
+LIGHTGLUE_SIGMA: 4.0
+SEGMAST3R_ENABLED: true
+SEGMAST3R_REPO: "D:/IMPACT_first/segmast3r"  # CHANGE to your existing repository
+SEGMAST3R_CONFIG: "configs/config_eval_spp_resz.yaml"
+SEGMAST3R_CHECKPOINT: "D:/IMPACT_first/segmast3r/checkpoints/segmast3r_spp.ckpt"  # CHANGE
+SEGMAST3R_IMAGE_SIZE: 512
+# Official paired_data_interface.py normalizes to [-1,1]; the Gradio demo
+# instead uses [0,1]. Both paths are supported for a controlled comparison.
+SEGMAST3R_NORMALIZATION: "minus_one_one"
+# Experimental starting weights; component scores are not calibrated probabilities.
+CLIP_WEIGHT: 0.35
+LIGHTGLUE_WEIGHT: 0.20
+SEGMAST3R_WEIGHT: 0.45
+REQUIRE_SEGMAST3R_SUPPORT: true  # candidate must beat both SegMASt3R dustbins
+MATCH_THRESHOLD: 0.55  # tune using labeled validation pairs
+MATCH_MARGIN: 0.04  # bilateral separation from all competing instances
+VISUALIZE_FIG: true
